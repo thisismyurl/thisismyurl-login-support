@@ -3,7 +3,7 @@
  * Plugin Name: Login Support by thisismyurl.com
  * Plugin URI:  https://thisismyurl.com/
  * Description: Harden login access by allowing a custom login slug and admin security controls.
- * Version:     1.6112
+ * Version:     0.6112
  * Author:      thisismyurl.com
  * Author URI:  https://thisismyurl.com/
  * Text Domain: thisismyurl-login-support
@@ -14,7 +14,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TIMU_LOGIN_SUPPORT_VERSION', '1.6112' );
+define( 'TIMU_LOGIN_SUPPORT_VERSION', '0.6112' );
 
 require_once plugin_dir_path( __FILE__ ) . 'core/class-timu-core.php';
 
