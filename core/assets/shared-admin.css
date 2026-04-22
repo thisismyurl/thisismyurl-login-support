@@ -1,0 +1,23 @@
+.timu-admin-wrap { max-width: 1200px; margin-top: 20px; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+.timu-header { background: #fff; padding: 25px; border: 1px solid #ccd0d4; border-radius: 4px; display: flex; align-items: center; margin-bottom: 25px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.timu-header img { height: 60px; margin-right: 20px; }
+.timu-card { background: #fff; border: 1px solid #ccd0d4; border-radius: 4px; margin-bottom: 25px; }
+.timu-card-header { padding: 15px 20px; border-bottom: 1px solid #ccd0d4; background: #f6f7f7; font-weight: 600; }
+.timu-card-body { padding: 25px; }
+.form-table h2 { background: #efefef; color: #000000; padding: 12px 20px; border-radius: 4px; font-size: 16px; margin-top: 0; }
+.timu-switch { position: relative; display: inline-block; width: 44px; height: 24px; vertical-align: middle; }
+.timu-switch input { opacity: 0; width: 0; height: 0; }
+.timu-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 24px; }
+.timu-slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+input:checked + .timu-slider { background-color: #2271b1; }
+input:checked + .timu-slider:before { transform: translateX(20px); }
+.timu-preview-box { margin-top: 15px; max-width: 300px; padding: 8px; border: 1px solid #ccd0d4; background: #f0f0f1; }
+.timu-preview-box img { max-width: 100%; height: auto; display: block; }
+.timu-tool-item { display: flex; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #f0f0f1; padding-bottom: 10px; }
+.timu-tool-icon { width: 48px; height: 48px; border-radius: 6px; margin-right: 12px; }
+.timu-see-all-tools { display: block; text-align: center; margin-top: 15px; font-weight: 600; text-decoration: none; color: #2271b1; }
+
+.timu-admin-wrap .postbox img {width:100%; height: auto;}
+.timu-admin-wrap .timu-footer-links { clear: both; }
+
+.timu-admin-wrap .postbox .timu-tool-item img { width:60px; height: auto;}
