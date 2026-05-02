@@ -1,5 +1,8 @@
 # Login Support by thisismyurl.com
 
+[![CI](https://github.com/thisismyurl/thisismyurl-login-support/actions/workflows/ci.yml/badge.svg)](https://github.com/thisismyurl/thisismyurl-login-support/actions/workflows/ci.yml) [![WordPress Tested](https://img.shields.io/badge/WordPress-6.8%2B-blue)](https://wordpress.org/) [![License](https://img.shields.io/badge/License-GPL--2.0-blue)](LICENSE)
+
+
 WordPress plugin to support stealth login URL shifting and admin-side login security utilities.
 
 ## Current Version
