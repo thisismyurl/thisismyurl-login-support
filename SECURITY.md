@@ -34,6 +34,88 @@ Security updates are provided for the current version and one previous major ver
 | Previous | ✅ | Critical security updates only |
 | Older | ❌ | No longer supported |
 
+## Threat Model
+
+This is a small plugin with a focused scope. Being explicit about what it
+defends against — and what it does not — is more useful than implying
+broader protection.
+
+### What this plugin DOES defend against
+
+- **Automated probing of `/wp-login.php`**. With Stealth Mode active, the
+  default login URL returns the home page. Bots that target
+  `/wp-login.php` directly never reach the login form.
+- **Credential brute-forcing of a single account**. The per-(username, IP)
+  rate limiter caps attempts and triggers a lockout for the configured
+  duration.
+- **Credential stuffing / username rotation from a single source**. The
+  per-IP global lockout (added in 0.6123) caps the total number of
+  failed attempts from a single IP regardless of which usernames are
+  being tried. Threshold is `rate_limit_attempts × multiplier` (default
+  4× per-account).
+- **Lockout bypass via correct password** (the bug fixed in 0.6123 /
+  advisory `GHSA-p369-rjwx-f44g`). Enforcement now runs on
+  `wp_authenticate` priority 5, BEFORE the password check, so a correct
+  password cannot bypass an active lockout.
+- **Accidental token exposure via Referer**. The recovery-token endpoint
+  emits `Referrer-Policy: no-referrer`, so the token does not leak to
+  third-party assets loaded by the login screen.
+- **Recovery bypass tied to the wrong IP**. The bypass is session-cookie-
+  bound (HttpOnly, Secure on HTTPS, SameSite=Lax) rather than IP-bound,
+  so a user whose IP rotates between clicking the recovery link and
+  reaching `/wp-login.php` is not falsely re-locked out.
+- **Application Password budget burn**. Failed Application Password
+  authentications do not count against the browser-login rate-limit
+  budget, so legitimate API traffic with a rotated app password cannot
+  lock real users out.
+- **Persistent state on uninstall**. `uninstall.php` cleans every option,
+  transient, and cron event the plugin owns.
+
+### What this plugin DOES NOT defend against
+
+- **Authenticated attacks**. Once a user logs in, this plugin has nothing
+  more to say. Use a 2FA plugin (Two Factor, WP 2FA, miniOrange) on top.
+- **Distributed brute-force across many source IPs**. The per-IP lockout
+  helps, but a botnet of 10,000 IPs each trying once will not trip it.
+  Pair this plugin with edge controls (Cloudflare WAF, Wordfence, your
+  reverse proxy) for that threat.
+- **XML-RPC / wp-json brute-forcing**. This plugin only inspects the
+  browser login path. Disable XML-RPC at the server level and use the
+  Application Password carve-out + a separate REST-auth control if you
+  expose the JSON API publicly.
+- **Vulnerable WordPress core or plugin/theme code**. Keep core, plugins,
+  and themes patched. This plugin is one layer; not the only one.
+- **DNS hijacking, SSL stripping, MITM**. Use HTTPS site-wide. The
+  recovery-bypass cookie is `Secure` only when the request is served
+  over HTTPS.
+- **Insider threats with database read access**. The recovery-bypass
+  lookup is keyed by SHA-256 of the cookie value, so a DB dump alone
+  cannot resurrect an active bypass — but an attacker with full server
+  access can still impersonate any user.
+
+### Known limits
+
+- **IP source trust**. By default, only `REMOTE_ADDR` is trusted. If your
+  site sits behind a reverse proxy (Cloudflare, AWS ELB, nginx
+  load-balancer), opt in to forwarded headers via
+  `add_filter( 'thisismyurl_login_support_trust_proxy_headers', '__return_true' );`.
+  For Cloudflare specifically, `CF-Connecting-IP` is only honoured when
+  `REMOTE_ADDR` is in the published Cloudflare ranges. Override that
+  list with `thisismyurl_login_support_cloudflare_ip_ranges`.
+- **Recovery token cryptography**. Recovery tokens are generated with
+  `wp_generate_password( 24, false, false )` (≥120 bits of entropy
+  against the lower-case alphanumeric alphabet) and stored as
+  `wp_hash( $token )` rather than plaintext. `wp_hash()` uses HMAC-MD5
+  with a server-side secret (`SECURE_AUTH_KEY`/`SECURE_AUTH_SALT`).
+  This is fit for a 5–180 minute single-use credential whose primary
+  defence is its high entropy and short lifetime, not for long-lived
+  password storage. Comparison uses `hash_equals()` to avoid timing
+  oracles.
+- **Lockout state lives in transients**. On hosts with a persistent
+  object cache (Memcached/Redis), lockouts survive across requests
+  cheaply. On hosts without one, transients fall back to the options
+  table — still durable, but heavier on writes for high-traffic sites.
+
 ## Changelog and Updates
 
 Check [CHANGELOG.md](CHANGELOG.md) and [GitHub Releases](../../releases) for security-related updates and fixes.

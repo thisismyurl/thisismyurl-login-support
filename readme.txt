@@ -3,9 +3,9 @@ Contributors: thisismyurl
 Donate link: https://thisismyurl.com/
 Tags: login, security, wp-login, rate limit, site health
 Requires at least: 6.0
-Tested up to: 6.8
+Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 0.6112
+Stable tag: 0.6123
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -54,11 +54,12 @@ No. It reduces exposure to common automated probes, but it is not a complete sec
 
 = What happens if I forget my custom slug? =
 
-Enable Recovery Mode, then generate a one-time recovery link from Settings > Login Support. The token is temporary and single-use.
+You have four recovery paths, in increasing severity:
 
-You can still temporarily disable the plugin by renaming its folder via SFTP/SSH or with WP-CLI:
-
-`wp plugin deactivate thisismyurl-login-support`
+1. **Generate a recovery link from the admin UI** (Settings > Login Support). The token is single-use and expires.
+2. **WP-CLI**: `wp login-support generate-recovery` prints a fresh recovery URL to stdout. You can also unlock yourself directly with `wp login-support unlock <your-username>` or wipe the secret slug entirely with `wp login-support reset-slug`.
+3. **Constant escape hatch**: add `define( 'TIMU_LOGIN_SUPPORT_DISABLE', true );` to wp-config.php. The plugin honours it immediately and `/wp-login.php` becomes reachable again. Remove the constant once you're back in.
+4. **Last resort**: rename the plugin folder via SFTP/SSH, or `wp plugin deactivate thisismyurl-login-support`.
 
 = Does the plugin include brute-force login controls? =
 
@@ -90,7 +91,7 @@ If they're helpful, here are genuine ways to support the work:
 
 = I found a bug or have a feature idea =
 
-* **File an issue on GitHub:** Visit https://github.com/thisismyurl/[plugin-name]/issues and include your WordPress and PHP version.
+* **File an issue on GitHub:** Visit https://github.com/thisismyurl/thisismyurl-login-support/issues and include your WordPress and PHP version.
 * **Start a discussion:** Use the Discussions tab on GitHub for questions or ideas.
 
 = I want to contribute code =
@@ -108,7 +109,22 @@ I review PRs thoughtfully and appreciate well-tested contributions. Contributing
 
 == Changelog ==
 
-= 1.6112 =
+= 0.6123 =
+* SECURITY: Fixed inverted rate-limiter (advisory GHSA-p369-rjwx-f44g) — a correct password could previously bypass an active lockout. Enforcement now hooks `wp_authenticate` priority 5 and halts BEFORE the password check runs. **All users on 0.6112 should update immediately.**
+* Added per-IP global lockout (defends against username-rotation / credential stuffing).
+* Hardened IP resolution — `X-Forwarded-For` and `CF-Connecting-IP` are no longer trusted unconditionally; opt in via `thisismyurl_login_support_trust_proxy_headers`.
+* Recovery-bypass moved from IP-bound to session-cookie-bound (fixes false lockouts on rotating mobile networks).
+* Application Password failures no longer count against the browser-login rate-limit budget.
+* Detected popular 2FA plugins (Two Factor / WP 2FA / miniOrange) and yields by default — override via `thisismyurl_login_support_skip_for_2fa`.
+* Constant escape hatch: `define( 'TIMU_LOGIN_SUPPORT_DISABLE', true );` in wp-config.php fully bypasses the plugin.
+* WP-CLI commands: `wp login-support unlock|reset-slug|generate-recovery|logs`.
+* Recovery token storage moved out of the autoloaded options array into a dedicated transient.
+* `Referrer-Policy: no-referrer` emitted on the recovery URL hit so the token cannot leak via Referer.
+* PHP 8.1+ hygiene: removed deprecated `FILTER_SANITIZE_FULL_SPECIAL_CHARS`.
+* Added uninstall.php to clean every option, transient, and cron event on plugin removal.
+* Logging-toggle change is now itself logged out-of-band so the disable event is preserved.
+
+= 0.6112 =
 * Added one-time recovery token mode with lifetime control.
 * Added configurable login rate limiting and lockout protection.
 * Added security event logging with retention controls and clear action.
@@ -118,5 +134,8 @@ I review PRs thoughtfully and appreciate well-tested contributions. Contributing
 
 == Upgrade Notice ==
 
-= 1.6112 =
+= 0.6123 =
+Critical security fix for advisory GHSA-p369-rjwx-f44g (inverted rate limiter). Update immediately. Adds per-IP lockout, 2FA compatibility, WP-CLI escape hatch, and Application Password carve-out.
+
+= 0.6112 =
 Includes recovery access, login rate limiting, event logging, and Site Health integration.
