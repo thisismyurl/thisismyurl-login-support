@@ -3,7 +3,7 @@
  * Plugin Name: Login Support by thisismyurl.com
  * Plugin URI:  https://thisismyurl.com/
  * Description: Harden login access by allowing a custom login slug and admin security controls.
- * Version:     0.6112
+ * Version:     0.6123
  * Author:      thisismyurl.com
  * Author URI:  https://thisismyurl.com/
  * Text Domain: thisismyurl-login-support
@@ -14,7 +14,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TIMU_LOGIN_SUPPORT_VERSION', '0.6112' );
+define( 'TIMU_LOGIN_SUPPORT_VERSION', '0.6123' );
 
 require_once plugin_dir_path( __FILE__ ) . 'core/class-timu-core.php';
 
@@ -31,9 +31,31 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
         add_action( 'admin_menu', array( $this, 'add_menu' ) );
         add_action( 'setup_theme', array( $this, 'handle_login_shifting' ), 1 );
         add_filter( 'site_url', array( $this, 'rewrite_login_urls' ), 10, 4 );
-        add_filter( 'authenticate', array( $this, 'enforce_rate_limit' ), 30, 3 );
+
+        /*
+         * Rate limiter is hooked at `wp_authenticate` priority 5 — BEFORE WP runs
+         * the password check (`wp_authenticate_username_password` runs at default
+         * priority 20 on the `authenticate` filter). This is intentional and
+         * load-bearing: the prior implementation (advisory GHSA-p369-rjwx-f44g)
+         * hooked the lockout check on `authenticate` priority 30 with an
+         * `is_wp_error` early-return, which meant a correct password would bypass
+         * an active lockout entirely. By gating on `wp_authenticate` we ensure the
+         * lockout fires regardless of credential correctness, and we read the
+         * username from $_POST['log'] at that early stage (documented in
+         * enforce_rate_limit()).
+         */
+        add_action( 'wp_authenticate', array( $this, 'enforce_rate_limit' ), 5, 2 );
         add_action( 'wp_login_failed', array( $this, 'track_failed_login' ) );
         add_action( 'wp_login', array( $this, 'track_successful_login' ), 10, 2 );
+
+        /*
+         * Application Password failures fire `wp_login_failed` too, which would
+         * burn through the lockout budget on legitimate API traffic that simply
+         * uses an expired/rotated app password. Carve them out: when the Application
+         * Password authentication path errors, we set a flag that track_failed_login
+         * checks before counting the attempt against the user/IP rate-limit budget.
+         */
+        add_action( 'wp_authenticate_application_password_errors', array( $this, 'mark_application_password_failure' ), 10, 4 );
         add_action( 'update_option_' . $this->plugin_slug . '_options', array( $this, 'handle_option_updates' ), 10, 2 );
         add_filter( 'site_status_tests', array( $this, 'register_site_health_tests' ) );
     }
@@ -110,38 +132,198 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
         return ! empty( $options['enable_shifting'] ) && ! empty( $this->get_login_slug() );
     }
 
+    /**
+     * Resolve the client IP.
+     *
+     * REMOTE_ADDR is the only header trusted by default. Forwarded-for variants
+     * (`X-Forwarded-For`, `CF-Connecting-IP`) are spoofable by any client unless
+     * the site sits behind a reverse proxy that strips and rewrites them. To
+     * enable trust in those headers, the site owner opts in via filter:
+     *
+     *   add_filter( 'thisismyurl_login_support_trust_proxy_headers', '__return_true' );
+     *
+     * For Cloudflare specifically, the `CF-Connecting-IP` header is only honoured
+     * when the request's REMOTE_ADDR is in Cloudflare's published IP ranges. A
+     * site owner can supply that allowlist via:
+     *
+     *   add_filter( 'thisismyurl_login_support_cloudflare_ip_ranges', $cidrs );
+     *
+     * The default behaviour (REMOTE_ADDR only) is the only safe stance for a
+     * plugin shipped to .org without knowing the deploy topology. Closes
+     * audit-finding #4 (HTTP_X_FORWARDED_FOR / HTTP_CF_CONNECTING_IP trusted
+     * unconditionally — P1).
+     *
+     * @return string A validated IP, or '0.0.0.0' if none can be derived.
+     */
     private function get_client_ip() {
-        $keys = array( 'HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR' );
+        $remote_addr = isset( $_SERVER['REMOTE_ADDR'] )
+            ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) )
+            : '';
 
-        foreach ( $keys as $key ) {
-            if ( empty( $_SERVER[ $key ] ) ) {
-                continue;
+        $trust_proxy_headers = (bool) apply_filters( 'thisismyurl_login_support_trust_proxy_headers', false );
+
+        if ( $trust_proxy_headers ) {
+            // CF-Connecting-IP only when REMOTE_ADDR is in the Cloudflare ranges.
+            if ( ! empty( $_SERVER['HTTP_CF_CONNECTING_IP'] ) && $this->ip_is_cloudflare( $remote_addr ) ) {
+                $cf = sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_CONNECTING_IP'] ) );
+
+                if ( filter_var( $cf, FILTER_VALIDATE_IP ) ) {
+                    return $cf;
+                }
             }
 
-            $raw_value = wp_unslash( $_SERVER[ $key ] );
-            $value     = is_array( $raw_value ) ? reset( $raw_value ) : $raw_value;
+            if ( ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+                $xff   = sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_FORWARDED_FOR'] ) );
+                $parts = array_map( 'trim', explode( ',', $xff ) );
+                $first = isset( $parts[0] ) ? $parts[0] : '';
 
-            if ( 'HTTP_X_FORWARDED_FOR' === $key ) {
-                $parts = array_map( 'trim', explode( ',', (string) $value ) );
-                $value = isset( $parts[0] ) ? $parts[0] : '';
+                if ( filter_var( $first, FILTER_VALIDATE_IP ) ) {
+                    return $first;
+                }
             }
+        }
 
-            $sanitized = sanitize_text_field( (string) $value );
-
-            if ( filter_var( $sanitized, FILTER_VALIDATE_IP ) ) {
-                return $sanitized;
-            }
+        if ( $remote_addr && filter_var( $remote_addr, FILTER_VALIDATE_IP ) ) {
+            return $remote_addr;
         }
 
         return '0.0.0.0';
     }
 
+    /**
+     * Test whether $ip is inside any of the Cloudflare IP ranges.
+     *
+     * Default ranges are the Cloudflare-published lists (current as of the
+     * release date). Site owners override via the
+     * `thisismyurl_login_support_cloudflare_ip_ranges` filter; that filter is
+     * the canonical contract and should return an array of CIDR strings.
+     *
+     * @param string $ip A validated IP, possibly empty.
+     * @return bool
+     */
+    private function ip_is_cloudflare( $ip ) {
+        if ( empty( $ip ) || ! filter_var( $ip, FILTER_VALIDATE_IP ) ) {
+            return false;
+        }
+
+        $defaults = array(
+            // IPv4.
+            '173.245.48.0/20',
+            '103.21.244.0/22',
+            '103.22.200.0/22',
+            '103.31.4.0/22',
+            '141.101.64.0/18',
+            '108.162.192.0/18',
+            '190.93.240.0/20',
+            '188.114.96.0/20',
+            '197.234.240.0/22',
+            '198.41.128.0/17',
+            '162.158.0.0/15',
+            '104.16.0.0/13',
+            '104.24.0.0/14',
+            '172.64.0.0/13',
+            '131.0.72.0/22',
+            // IPv6.
+            '2400:cb00::/32',
+            '2606:4700::/32',
+            '2803:f800::/32',
+            '2405:b500::/32',
+            '2405:8100::/32',
+            '2a06:98c0::/29',
+            '2c0f:f248::/32',
+        );
+
+        $ranges = (array) apply_filters( 'thisismyurl_login_support_cloudflare_ip_ranges', $defaults );
+
+        foreach ( $ranges as $cidr ) {
+            if ( $this->ip_in_cidr( $ip, $cidr ) ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * CIDR membership test. Supports IPv4 and IPv6.
+     *
+     * @param string $ip
+     * @param string $cidr
+     * @return bool
+     */
+    private function ip_in_cidr( $ip, $cidr ) {
+        if ( false === strpos( $cidr, '/' ) ) {
+            return $ip === $cidr;
+        }
+
+        list( $subnet, $bits ) = explode( '/', $cidr, 2 );
+        $bits = (int) $bits;
+
+        $ip_packed     = @inet_pton( $ip );
+        $subnet_packed = @inet_pton( $subnet );
+
+        if ( false === $ip_packed || false === $subnet_packed || strlen( $ip_packed ) !== strlen( $subnet_packed ) ) {
+            return false;
+        }
+
+        $bytes_full     = (int) floor( $bits / 8 );
+        $bits_remaining = $bits % 8;
+
+        if ( $bytes_full > 0 && 0 !== substr_compare( $ip_packed, $subnet_packed, 0, $bytes_full ) ) {
+            return false;
+        }
+
+        if ( 0 === $bits_remaining ) {
+            return true;
+        }
+
+        $mask = chr( 0xFF << ( 8 - $bits_remaining ) & 0xFF );
+
+        return ( $ip_packed[ $bytes_full ] & $mask ) === ( $subnet_packed[ $bytes_full ] & $mask );
+    }
+
+    /**
+     * Per-(username, IP) attempts key. Survives the rate-limit window.
+     */
     private function get_rate_limit_cache_key( $username, $ip ) {
         return $this->plugin_slug . '_rl_' . md5( strtolower( (string) $username ) . '|' . $ip );
     }
 
+    /**
+     * Per-(username, IP) lockout key.
+     */
     private function get_lockout_cache_key( $username, $ip ) {
         return $this->plugin_slug . '_lock_' . md5( strtolower( (string) $username ) . '|' . $ip );
+    }
+
+    /**
+     * Per-IP attempts key (independent of username). Defends against an attacker
+     * rotating usernames against a single IP — closes audit-finding #3 (P1).
+     */
+    private function get_ip_rate_limit_cache_key( $ip ) {
+        return $this->plugin_slug . '_rl_ip_' . md5( (string) $ip );
+    }
+
+    /**
+     * Per-IP lockout key.
+     */
+    private function get_ip_lockout_cache_key( $ip ) {
+        return $this->plugin_slug . '_lock_ip_' . md5( (string) $ip );
+    }
+
+    /**
+     * Per-IP attempt budget. The username-rotation defence is more aggressive
+     * than the per-(username,IP) check — we let the global per-IP budget be a
+     * filter-tunable multiple of the per-account threshold, defaulting to 4x.
+     * That keeps the username-based limit meaningful (an honest user fat-
+     * fingering their own password) while shutting down credential-stuffing
+     * (one IP, many usernames).
+     */
+    private function get_ip_attempt_threshold( $per_account_attempts ) {
+        $multiplier = (int) apply_filters( 'thisismyurl_login_support_ip_attempt_multiplier', 4 );
+        $multiplier = max( 1, $multiplier );
+
+        return max( $per_account_attempts, $per_account_attempts * $multiplier );
     }
 
     private function log_event( $event, $details = '', $user_login = '' ) {
@@ -204,14 +386,32 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
         return strtolower( sanitize_text_field( $token ) );
     }
 
+    /**
+     * Recovery token is persisted in a dedicated, non-autoloaded transient —
+     * NOT in the main `_options` array (which is autoloaded on every request,
+     * meaning every uncached page load would carry the recovery hash + expiry
+     * into PHP memory). Closes audit-finding #17 (P2).
+     */
+    const RECOVERY_TRANSIENT = 'thisismyurl-login-support_recovery';
+
     private function save_recovery_token( $token ) {
         $options = $this->get_controlled_options();
         $ttl     = max( 5, absint( $options['recovery_token_ttl'] ) );
 
-        $options['recovery_token_hash']    = wp_hash( $token );
-        $options['recovery_token_expires'] = time() + ( MINUTE_IN_SECONDS * $ttl );
+        // Migration: if the old hash sits in the options array, scrub it.
+        if ( isset( $options['recovery_token_hash'] ) || isset( $options['recovery_token_expires'] ) ) {
+            unset( $options['recovery_token_hash'], $options['recovery_token_expires'] );
+            update_option( $this->plugin_slug . '_options', $options );
+        }
 
-        update_option( $this->plugin_slug . '_options', $options );
+        set_transient(
+            self::RECOVERY_TRANSIENT,
+            array(
+                'hash'    => wp_hash( $token ),
+                'expires' => time() + ( MINUTE_IN_SECONDS * $ttl ),
+            ),
+            MINUTE_IN_SECONDS * $ttl
+        );
     }
 
     private function is_valid_recovery_token( $token ) {
@@ -221,22 +421,80 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
             return false;
         }
 
-        if ( empty( $options['recovery_token_hash'] ) || empty( $options['recovery_token_expires'] ) ) {
+        $stored = get_transient( self::RECOVERY_TRANSIENT );
+
+        if ( ! is_array( $stored ) || empty( $stored['hash'] ) || empty( $stored['expires'] ) ) {
             return false;
         }
 
-        if ( time() > (int) $options['recovery_token_expires'] ) {
+        if ( time() > (int) $stored['expires'] ) {
             return false;
         }
 
-        return hash_equals( $options['recovery_token_hash'], wp_hash( $token ) );
+        return hash_equals( (string) $stored['hash'], wp_hash( (string) $token ) );
     }
 
     private function consume_recovery_token() {
+        delete_transient( self::RECOVERY_TRANSIENT );
+
+        // Belt-and-braces: scrub any stale option keys from older versions.
         $options = $this->get_controlled_options();
 
-        unset( $options['recovery_token_hash'], $options['recovery_token_expires'] );
-        update_option( $this->plugin_slug . '_options', $options );
+        if ( isset( $options['recovery_token_hash'] ) || isset( $options['recovery_token_expires'] ) ) {
+            unset( $options['recovery_token_hash'], $options['recovery_token_expires'] );
+            update_option( $this->plugin_slug . '_options', $options );
+        }
+    }
+
+    /**
+     * Stable, opaque per-visitor identifier used to bind a recovery-token
+     * bypass to "the browser session that hit the URL," not to "any IP that
+     * matched at click time." Closes audit-finding #5 (P1) — old behaviour
+     * broke for users on mobile networks whose IP rotated mid-flow.
+     *
+     * The cookie is HttpOnly, Secure (when HTTPS), SameSite=Lax. Lifetime
+     * matches the bypass window. Cookie value is a 32-byte random hex string
+     * we hash before storing the lookup key, so the cookie value alone isn't
+     * the lockup.
+     */
+    const RECOVERY_BYPASS_COOKIE = 'timu_login_support_bypass';
+
+    private function set_recovery_bypass_cookie() {
+        $token = wp_generate_password( 32, false, false );
+        $ttl   = MINUTE_IN_SECONDS * 10;
+
+        // Lookup key = hash of the cookie value, so reading the wp_options /
+        // transient store doesn't expose the bypass token to anyone with DB
+        // read access.
+        $lookup = $this->plugin_slug . '_recovery_bypass_' . hash( 'sha256', $token );
+
+        set_transient( $lookup, 1, $ttl );
+
+        if ( ! headers_sent() ) {
+            setcookie(
+                self::RECOVERY_BYPASS_COOKIE,
+                $token,
+                array(
+                    'expires'  => time() + $ttl,
+                    'path'     => COOKIEPATH ? COOKIEPATH : '/',
+                    'domain'   => COOKIE_DOMAIN ? COOKIE_DOMAIN : '',
+                    'secure'   => is_ssl(),
+                    'httponly' => true,
+                    'samesite' => 'Lax',
+                )
+            );
+        }
+    }
+
+    private function recovery_bypass_active() {
+        if ( empty( $_COOKIE[ self::RECOVERY_BYPASS_COOKIE ] ) ) {
+            return false;
+        }
+
+        $token  = sanitize_text_field( wp_unslash( $_COOKIE[ self::RECOVERY_BYPASS_COOKIE ] ) );
+        $lookup = $this->plugin_slug . '_recovery_bypass_' . hash( 'sha256', $token );
+
+        return (bool) get_transient( $lookup );
     }
 
     public function handle_admin_actions() {
@@ -244,9 +502,13 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
             return;
         }
 
-        $action = filter_input( INPUT_GET, 'timu_action', FILTER_SANITIZE_FULL_SPECIAL_CHARS );
-        $page   = filter_input( INPUT_GET, 'page', FILTER_SANITIZE_FULL_SPECIAL_CHARS );
-        $nonce  = filter_input( INPUT_GET, '_wpnonce', FILTER_SANITIZE_FULL_SPECIAL_CHARS );
+        // Replaced filter_input(INPUT_GET, ..., FILTER_SANITIZE_FULL_SPECIAL_CHARS) —
+        // the FULL_SPECIAL_CHARS constant is deprecated in PHP 8.1+. The
+        // wp_unslash + sanitize_text_field pair is the WP-native equivalent and
+        // PHP 8.4-clean. Closes audit-finding #6 (P1).
+        $action = isset( $_GET['timu_action'] ) ? sanitize_text_field( wp_unslash( $_GET['timu_action'] ) ) : '';
+        $page   = isset( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
+        $nonce  = isset( $_GET['_wpnonce'] ) ? sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ) : '';
 
         if ( $this->plugin_slug !== $page || empty( $action ) ) {
             return;
@@ -257,10 +519,15 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
         }
 
         if ( 'generate_recovery' === $action ) {
-            $token = $this->generate_recovery_token();
+            $token        = $this->generate_recovery_token();
+            $generated_by = wp_get_current_user();
             $this->save_recovery_token( $token );
             set_transient( $this->plugin_slug . '_recovery_token', $token, MINUTE_IN_SECONDS * 3 );
-            $this->log_event( 'Recovery token generated', 'Admin generated one-time recovery token' );
+            $this->log_event(
+                'Recovery token generated',
+                sprintf( 'Generated by user_id=%d login=%s', (int) $generated_by->ID, $generated_by->user_login ),
+                $generated_by->user_login
+            );
         }
 
         if ( 'clear_logs' === $action ) {
@@ -277,11 +544,11 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
             return;
         }
 
-        $force_logout = filter_input( INPUT_GET, 'timu_force_logout', FILTER_SANITIZE_NUMBER_INT );
-        $page         = filter_input( INPUT_GET, 'page', FILTER_SANITIZE_FULL_SPECIAL_CHARS );
-        $nonce        = filter_input( INPUT_GET, '_wpnonce', FILTER_SANITIZE_FULL_SPECIAL_CHARS );
+        $force_logout = isset( $_GET['timu_force_logout'] ) ? absint( wp_unslash( $_GET['timu_force_logout'] ) ) : 0;
+        $page         = isset( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
+        $nonce        = isset( $_GET['_wpnonce'] ) ? sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ) : '';
 
-        if ( '1' !== (string) $force_logout || $this->plugin_slug !== $page ) {
+        if ( 1 !== $force_logout || $this->plugin_slug !== $page ) {
             return;
         }
 
@@ -501,12 +768,28 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
     }
 
     public function handle_login_shifting() {
-        $recovery_token = filter_input( INPUT_GET, 'timu_recovery_token', FILTER_SANITIZE_FULL_SPECIAL_CHARS );
+        // Constant escape hatch — `define( 'TIMU_LOGIN_SUPPORT_DISABLE', true );`
+        // in wp-config.php fully bypasses slug shifting and recovery-token
+        // logic. Closes audit-finding #2 (P0 — alternative path).
+        if ( defined( 'TIMU_LOGIN_SUPPORT_DISABLE' ) && TIMU_LOGIN_SUPPORT_DISABLE ) {
+            return;
+        }
+
+        $recovery_token = isset( $_GET['timu_recovery_token'] )
+            ? sanitize_text_field( wp_unslash( $_GET['timu_recovery_token'] ) )
+            : '';
 
         if ( ! empty( $recovery_token ) && $this->is_valid_recovery_token( $recovery_token ) ) {
-            set_transient( $this->plugin_slug . '_recovery_bypass_' . md5( $this->get_client_ip() ), 1, MINUTE_IN_SECONDS * 10 );
+            // Strip the token from any onward Referer header. Defends against
+            // accidental token leakage to third-party assets loaded by the
+            // login screen. Closes audit-finding #15 (P2).
+            if ( ! headers_sent() ) {
+                header( 'Referrer-Policy: no-referrer' );
+            }
+
+            $this->set_recovery_bypass_cookie();
             $this->consume_recovery_token();
-            $this->log_event( 'Recovery token used', 'Temporary login bypass granted for current IP' );
+            $this->log_event( 'Recovery token used', 'Temporary login bypass cookie issued (session-bound, not IP-bound)' );
             wp_safe_redirect( wp_login_url() );
             exit;
         }
@@ -529,9 +812,7 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
         }
 
         if ( 'wp-login.php' === basename( $request_path ) ) {
-            $bypass = get_transient( $this->plugin_slug . '_recovery_bypass_' . md5( $this->get_client_ip() ) );
-
-            if ( $bypass ) {
+            if ( $this->recovery_bypass_active() ) {
                 return;
             }
 
@@ -540,70 +821,225 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
         }
     }
 
-    public function enforce_rate_limit( $user, $username, $password ) {
+    /**
+     * Enforce the rate-limit lockout BEFORE WordPress evaluates the password.
+     *
+     * Hooked on `wp_authenticate` (priority 5). At this point WP has not yet
+     * touched the credentials — `wp_authenticate_username_password` runs at
+     * priority 20 on the `authenticate` filter. Hooking earlier and using
+     * `wp_die()` to halt execution ensures a correct password CANNOT bypass an
+     * active lockout (the bug fixed by GHSA-p369-rjwx-f44g).
+     *
+     * The action signature is `wp_authenticate( &$username, &$password )`. The
+     * username is also available on $_POST['log']; we accept the by-reference
+     * argument as authoritative.
+     *
+     * Two budgets are checked:
+     *   1. Per-(username, IP) lockout — protects a specific account.
+     *   2. Per-IP lockout              — protects against username rotation
+     *                                    from a single source. Closes
+     *                                    audit-finding #3 (P1).
+     *
+     * Skip behaviour:
+     *   - When no username is supplied (e.g. an empty form submission), we let
+     *     WP handle the empty-username error itself.
+     *   - When a 2FA plugin we recognise is active and the
+     *     `thisismyurl_login_support_skip_for_2fa` filter returns truthy, we
+     *     yield. Closes audit-finding #11 (P1).
+     *
+     * @param string|null $username
+     * @param string|null $password
+     * @return void
+     */
+    public function enforce_rate_limit( $username, $password = null ) {
         $options = $this->get_controlled_options();
 
         if ( empty( $options['enable_rate_limit'] ) ) {
-            return $user;
+            return;
         }
 
-        if ( is_wp_error( $user ) ) {
-            return $user;
+        $username = is_string( $username ) ? trim( $username ) : '';
+
+        if ( '' === $username ) {
+            return;
         }
 
-        $ip       = $this->get_client_ip();
-        $lock_key = $this->get_lockout_cache_key( $username, $ip );
+        if ( $this->should_skip_for_2fa() ) {
+            return;
+        }
 
-        if ( get_transient( $lock_key ) ) {
-            $this->log_event( 'Login blocked by rate limiter', 'User is temporarily locked out', (string) $username );
+        $ip                 = $this->get_client_ip();
+        $username_lock_key  = $this->get_lockout_cache_key( $username, $ip );
+        $ip_lock_key        = $this->get_ip_lockout_cache_key( $ip );
 
-            return new WP_Error(
-                'timu_rate_limit_lockout',
-                esc_html__( 'Too many failed attempts. Please try again later.', 'thisismyurl-login-support' )
+        if ( get_transient( $username_lock_key ) || get_transient( $ip_lock_key ) ) {
+            $this->log_event( 'Login blocked by rate limiter', 'Active lockout intercepted authentication request', $username );
+
+            // wp_die() is the correct halt here. Returning a WP_Error from
+            // wp_authenticate is not contractual (it's an action, not a filter);
+            // an early wp_die guarantees the password check downstream cannot
+            // run, regardless of credential correctness.
+            wp_die(
+                esc_html__( 'Too many failed login attempts. Please try again later.', 'thisismyurl-login-support' ),
+                esc_html__( 'Login locked', 'thisismyurl-login-support' ),
+                array( 'response' => 429 )
             );
         }
+    }
 
-        return $user;
+    /**
+     * Detect popular 2FA plugins. The `thisismyurl_login_support_skip_for_2fa`
+     * filter inverts the default — return true to skip (the default), false to
+     * keep enforcing the rate limit on top of 2FA.
+     *
+     * @return bool
+     */
+    private function should_skip_for_2fa() {
+        // is_plugin_active() lives in wp-admin/includes/plugin.php which is
+        // not guaranteed to be loaded on the front-end auth path. Pull it in
+        // when we need it.
+        if ( ! function_exists( 'is_plugin_active' ) ) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+
+        $known = array(
+            'two-factor/two-factor.php',
+            'wp-2fa/wp-2fa.php',
+            'miniorange-2-factor-authentication/miniorange_2_factor_settings.php',
+        );
+
+        $active = false;
+
+        foreach ( $known as $plugin_file ) {
+            if ( is_plugin_active( $plugin_file ) ) {
+                $active = true;
+                break;
+            }
+        }
+
+        if ( ! $active ) {
+            return false;
+        }
+
+        return (bool) apply_filters( 'thisismyurl_login_support_skip_for_2fa', true );
+    }
+
+    /**
+     * Mark Application Password failures so track_failed_login() doesn't burn
+     * the user/IP rate-limit budget on legitimate API traffic with rotated
+     * credentials. Closes audit-finding #10 (P1).
+     *
+     * Signature: ( WP_Error $error, WP_User $user, array $app_password, array $args ).
+     *
+     * @param mixed $error Unused — we only care that the hook fired.
+     */
+    public function mark_application_password_failure( $error, $user = null, $app_password = null, $args = null ) {
+        // Static flag picked up by track_failed_login on this same request.
+        $GLOBALS['timu_login_support_app_password_failure'] = true;
+
+        return $error;
     }
 
     public function track_failed_login( $username ) {
         $options = $this->get_controlled_options();
+
+        // Application Password failure carve-out (audit-finding #10).
+        if ( ! empty( $GLOBALS['timu_login_support_app_password_failure'] ) ) {
+            $this->log_event( 'Application Password failure (not counted)', 'API path skipped browser-login budget', (string) $username );
+            unset( $GLOBALS['timu_login_support_app_password_failure'] );
+            return;
+        }
 
         if ( empty( $options['enable_rate_limit'] ) ) {
             $this->log_event( 'Failed login', 'Login failed while rate limiting is disabled', (string) $username );
             return;
         }
 
-        $ip           = $this->get_client_ip();
-        $attempts_key = $this->get_rate_limit_cache_key( $username, $ip );
-        $lock_key     = $this->get_lockout_cache_key( $username, $ip );
-        $attempts     = absint( get_transient( $attempts_key ) );
+        $ip                  = $this->get_client_ip();
+        $username            = (string) $username;
+        $window_seconds      = MINUTE_IN_SECONDS * absint( $options['rate_limit_window'] );
+        $lockout_seconds     = MINUTE_IN_SECONDS * absint( $options['lockout_minutes'] );
+        $per_account_max     = absint( $options['rate_limit_attempts'] );
+        $per_ip_max          = $this->get_ip_attempt_threshold( $per_account_max );
 
-        $attempts++;
+        // Per-(username, IP) budget.
+        $attempts_key      = $this->get_rate_limit_cache_key( $username, $ip );
+        $username_lock_key = $this->get_lockout_cache_key( $username, $ip );
+        $attempts          = absint( get_transient( $attempts_key ) ) + 1;
 
-        set_transient( $attempts_key, $attempts, MINUTE_IN_SECONDS * absint( $options['rate_limit_window'] ) );
-        $this->log_event( 'Failed login', 'Failed attempt count: ' . $attempts, (string) $username );
+        set_transient( $attempts_key, $attempts, $window_seconds );
 
-        if ( $attempts >= absint( $options['rate_limit_attempts'] ) ) {
-            set_transient( $lock_key, 1, MINUTE_IN_SECONDS * absint( $options['lockout_minutes'] ) );
+        // Per-IP budget (independent of username — credential-stuffing defence).
+        $ip_attempts_key = $this->get_ip_rate_limit_cache_key( $ip );
+        $ip_lock_key     = $this->get_ip_lockout_cache_key( $ip );
+        $ip_attempts     = absint( get_transient( $ip_attempts_key ) ) + 1;
+
+        set_transient( $ip_attempts_key, $ip_attempts, $window_seconds );
+
+        $this->log_event(
+            'Failed login',
+            sprintf( 'attempts: user=%d ip=%d', $attempts, $ip_attempts ),
+            $username
+        );
+
+        if ( $attempts >= $per_account_max ) {
+            set_transient( $username_lock_key, 1, $lockout_seconds );
             delete_transient( $attempts_key );
-            $this->log_event( 'Rate limit lockout', 'Lockout triggered after repeated failed attempts', (string) $username );
+            $this->log_event( 'Rate limit lockout (per account)', 'Lockout triggered for user/IP pair', $username );
+        }
+
+        if ( $ip_attempts >= $per_ip_max ) {
+            set_transient( $ip_lock_key, 1, $lockout_seconds );
+            delete_transient( $ip_attempts_key );
+            $this->log_event( 'Rate limit lockout (per IP)', 'Lockout triggered for IP — possible username rotation', $username );
         }
     }
 
     public function track_successful_login( $user_login, $user ) {
-        $ip           = $this->get_client_ip();
-        $attempts_key = $this->get_rate_limit_cache_key( $user_login, $ip );
-        $lock_key     = $this->get_lockout_cache_key( $user_login, $ip );
+        $ip                = $this->get_client_ip();
+        $attempts_key      = $this->get_rate_limit_cache_key( $user_login, $ip );
+        $username_lock_key = $this->get_lockout_cache_key( $user_login, $ip );
 
+        // Clear the per-(username,IP) state on success. Do NOT clear the per-IP
+        // budget — a successful login from one account on a probing IP doesn't
+        // erase the suspicious pattern of N other usernames being tried.
         delete_transient( $attempts_key );
-        delete_transient( $lock_key );
+        delete_transient( $username_lock_key );
+
         $this->log_event( 'Successful login', 'Authentication succeeded', (string) $user_login );
     }
 
     public function handle_option_updates( $old_value, $new_value ) {
         $old_value = is_array( $old_value ) ? $old_value : array();
         $new_value = is_array( $new_value ) ? $new_value : array();
+
+        // Capture the toggle BEFORE honouring it. If logging is being turned
+        // off, this is the last entry that will land before the toggle takes
+        // effect on the next request — important for audit-trail integrity.
+        // Closes audit-finding #19 (P2): the disable event should be the final
+        // event recorded, never silently dropped.
+        $old_logging = isset( $old_value['enable_event_logging'] ) ? (int) $old_value['enable_event_logging'] : 1;
+        $new_logging = isset( $new_value['enable_event_logging'] ) ? (int) $new_value['enable_event_logging'] : 1;
+
+        if ( $old_logging !== $new_logging ) {
+            // Re-read options ourselves and bypass the toggle in log_event for
+            // this single audit entry — the disable event must always land.
+            $logs   = get_option( self::LOG_OPTION, array() );
+            $logs   = is_array( $logs ) ? $logs : array();
+            $logs[] = array(
+                'time'    => time(),
+                'event'   => 0 === $new_logging ? 'Event logging disabled' : 'Event logging enabled',
+                'ip'      => sanitize_text_field( $this->get_client_ip() ),
+                'user'    => sanitize_text_field( wp_get_current_user()->user_login ),
+                'details' => 'Logging toggle change recorded out-of-band so the disable event itself is preserved.',
+            );
+
+            if ( count( $logs ) > 500 ) {
+                $logs = array_slice( $logs, -500 );
+            }
+
+            update_option( self::LOG_OPTION, $logs, false );
+        }
 
         if ( ( $old_value['slug'] ?? '' ) !== ( $new_value['slug'] ?? '' ) ) {
             $this->log_event( 'Secret slug updated', 'Stealth login slug changed by admin' );
@@ -692,3 +1128,23 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
 }
 
 new TIMU_Login_Support();
+
+/**
+ * WP-CLI escape hatch.
+ *
+ * Closes audit-finding #2 (P0 — admin recovery) and the [feature][P2] WP-CLI
+ * tracker. Provides four sub-commands:
+ *
+ *   wp login-support unlock <user-or-ip>
+ *   wp login-support reset-slug
+ *   wp login-support generate-recovery
+ *   wp login-support logs [--limit=<n>] [--clear]
+ *
+ * Every command bypasses the browser UI so an admin who has lost access to
+ * the secret slug can recover via SSH/WP-CLI without renaming the plugin
+ * folder. Documented in readme.txt.
+ */
+if ( defined( 'WP_CLI' ) && WP_CLI ) {
+    require_once plugin_dir_path( __FILE__ ) . 'core/class-timu-cli.php';
+    WP_CLI::add_command( 'login-support', 'TIMU_Login_Support_CLI' );
+}
