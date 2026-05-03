@@ -29,6 +29,18 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
         add_action( 'admin_init', array( $this, 'handle_force_logout' ) );
         add_action( 'admin_init', array( $this, 'handle_admin_actions' ) );
         add_action( 'admin_menu', array( $this, 'add_menu' ) );
+        /*
+         * `setup_theme` priority 1 is intentional and load-bearing. We need
+         * to intercept the request BEFORE the theme is loaded (`after_setup_theme`),
+         * BEFORE the parsed-URL is resolved (`parse_request`), and certainly
+         * before any other plugin's `init` work runs against `/wp-login.php`.
+         * If we hooked any later, the theme's bootstrap could already have
+         * fired functions.php side-effects against the request.
+         *
+         * Trade-off: we cannot use `is_admin()` reliably here yet — fine,
+         * because handle_login_shifting() defends against admin/AJAX/cron/REST
+         * with its own early-returns.
+         */
         add_action( 'setup_theme', array( $this, 'handle_login_shifting' ), 1 );
         add_filter( 'site_url', array( $this, 'rewrite_login_urls' ), 10, 4 );
 
@@ -1082,6 +1094,24 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
         } else {
             $issues[] = esc_html__( 'Security event logging is disabled.', 'thisismyurl-login-support' );
         }
+
+        // Filter to mark a setting as "deliberately disabled" so Site Health
+        // doesn't flag it. Closes audit-finding #25 (P3). Useful for sites
+        // that legitimately don't want, e.g., Stealth Mode (managed at the
+        // edge instead).
+        $deliberate = (array) apply_filters( 'thisismyurl_login_support_deliberately_disabled', array() );
+
+        if ( in_array( 'enable_shifting', $deliberate, true ) ) {
+            $good++;
+        }
+        if ( in_array( 'enable_rate_limit', $deliberate, true ) ) {
+            $good++;
+        }
+        if ( in_array( 'enable_event_logging', $deliberate, true ) ) {
+            $good++;
+        }
+
+        $good = min( 3, $good );
 
         if ( 3 === $good ) {
             return array(

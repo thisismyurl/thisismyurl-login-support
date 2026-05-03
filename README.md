@@ -7,63 +7,51 @@ WordPress plugin to support stealth login URL shifting and admin-side login secu
 
 ## Current Version
 
-`1.6112` (format: `1.Yddd`)
+`0.6123` (format: `x.Yddd`)
 
+- `x` = release class (`0` = pre-release, `1` = full release).
 - `Y` = last digit of the current year.
 - `ddd` = Julian day number.
-- Example for April 22, 2026: year digit `6` + day `112` => `1.6112`.
+- Example for May 3, 2026: year digit `6` + day `123` => `0.6123`.
 
-## Features
+This README is the developer-facing entry point — repo layout, contribution
+flow, security advisories. End-user documentation (features, settings,
+FAQ, changelog) lives in [`readme.txt`](readme.txt) for parity with the
+WordPress.org plugin directory listing.
 
-- Stealth Mode toggle for custom login slug behavior.
-- Secret slug field with sanitization.
-- Recovery Mode with one-time recovery token generation.
-- Login rate limiting with configurable thresholds and lockout windows.
-- Security Event Log with retention controls and clear action.
-- Site Health integration for security posture checks.
-- Force Global Logout admin action for active sessions.
-- Shared core admin framework and UI components.
+## Security Advisories
 
-## Admin Controls
+| Advisory | Severity | Affected | Fixed in |
+|---|---|---|---|
+| [`GHSA-p369-rjwx-f44g`](https://github.com/thisismyurl/thisismyurl-login-support/security/advisories) | High | ≤ 0.6112 | 0.6123 |
 
-- Recovery Mode: enable/disable and token lifetime (5-180 minutes).
-- Rate Limiting: enable/disable, failed-attempt threshold, attempt window, lockout duration.
-- Event Logging: enable/disable, retention window (days), manual log clearing.
-- Security Utilities: one-click global session logout and one-time recovery link generation.
+If you discover a vulnerability, please follow the disclosure process in
+[SECURITY.md](SECURITY.md) — do **not** open a public issue.
 
-## Standards and Compliance
+## Repository Layout
 
-This repository has been updated for WordPress.org submission readiness:
+```
+thisismyurl-login-support.php   # plugin bootstrap, main class
+core/class-timu-core.php        # shared admin framework
+core/class-timu-cli.php         # WP-CLI commands (loaded only under WP_CLI)
+core/assets/shared-admin.{js,css}
+assets/                         # plugin icon + banner for .org
+uninstall.php                   # removes options/transients/cron on uninstall
+readme.txt                      # WP.org plugin directory readme (end-user docs)
+SECURITY.md                     # disclosure process + threat model
+CHANGELOG.md                    # version history
+```
 
-- Complete plugin header metadata in the main plugin file.
-- Localization-ready strings and text domain usage.
-- Nonce and capability checks for privileged actions.
-- Sanitization and escaping improvements across admin output.
-- DRY admin assets (shared JS/CSS in core, compatibility wrappers in assets).
-- WordPress.org-compatible `readme.txt` added.
+## Local development
 
-## Installation
+```bash
+composer install
+composer run lint:phpcs        # WordPress Coding Standards
+composer run lint:phpstan      # static analysis
+php -l thisismyurl-login-support.php   # quick syntax check
+```
 
-1. Copy this plugin to `wp-content/plugins/thisismyurl-login-support`.
-2. Activate the plugin in WordPress admin.
-3. Open `Settings > Login Support`.
-4. Enable Stealth Mode and set a secret slug.
-5. Configure Recovery Mode, rate limiting, and security event logging.
-6. Save and test login access in a private browser session.
-
-## Security Feature Behavior
-
-- Recovery Mode: generates a single-use tokenized URL that grants temporary login bypass for the current IP.
-- Rate Limiting: tracks failed attempts by username+IP and applies timed lockouts.
-- Event Logging: records key security actions and authentication events with retention pruning.
-- Site Health: reports whether key plugin protections are enabled.
-
-## Development Notes
-
-- Main plugin bootstrap: `thisismyurl-login-support.php`
-- Shared core class: `core/class-timu-core.php`
-- Shared admin assets: `core/assets/shared-admin.js`, `core/assets/shared-admin.css`
-- Legacy asset compatibility wrappers: `assets/admin-script.js`, `assets/admin-style.css`
+CI runs the PHP lint matrix and PHPCS on every PR.
 
 ## License
 
