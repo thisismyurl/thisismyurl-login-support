@@ -1,7 +1,7 @@
 <?php
 /**
  * TIMU Shared Core Library
- * Version: 1.6112
+ * Version: 0.6123
  * Author: thisismyurl.com
  */
 
@@ -60,7 +60,10 @@ if ( ! class_exists( 'TIMU_Core_v1' ) ) {
                 return;
             }
 
-            $version = defined( 'TIMU_LOGIN_SUPPORT_VERSION' ) ? TIMU_LOGIN_SUPPORT_VERSION : '1.6112';
+            // The constant is defined in the plugin bootstrap; if it isn't,
+            // emit cache-busting based on the current request time so we
+            // never silently pin to a stale version.
+            $version = defined( 'TIMU_LOGIN_SUPPORT_VERSION' ) ? TIMU_LOGIN_SUPPORT_VERSION : (string) time();
 
             wp_enqueue_media();
             wp_enqueue_style( 'wp-color-picker' );
