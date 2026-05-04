@@ -1,0 +1,249 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR Christopher Ross
+# This file is distributed under the same license as the Login Support package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Login Support 0.6112\n"
+"Report-Msgid-Bugs-To: https://github.com/thisismyurl/thisismyurl-login-"
+"support/issues\n"
+"POT-Creation-Date: 2026-05-04 23:47+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=CHARSET\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/core/class-timu-core.php:74
+msgid "Local-First Promise"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/core/class-timu-core.php:78
+msgid ""
+"This plugin is designed to work on your WordPress site without any required "
+"cloud account, AI service, license gate, or paywall."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/core/class-timu-core.php:80
+msgid ""
+"Security controls, recovery tools, logs, and settings stay under the site "
+"owner's control."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/core/class-timu-core.php:91
+msgid "thisismyurl icon"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/core/class-timu-core.php:102
+msgid "thisismyurl banner"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/core/class-timu-core.php:104
+msgid "Plugin Values"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/core/class-timu-core.php:105
+msgid ""
+"Local-first, no AI required, plain-English controls, and safe recovery paths."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/core/class-timu-core.php:106
+msgid ""
+"Use the settings on this page to control how login access works for your "
+"site."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/core/class-timu-core.php:111
+msgid "Safety Checklist"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/core/class-timu-core.php:114
+msgid "Generate a recovery link before changing the secret slug."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/core/class-timu-core.php:115
+msgid "Test login changes in a private browser window."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/core/class-timu-core.php:116
+msgid "Review the security event log after policy changes."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/core/class-timu-core.php:117
+msgid "Review Site Health after major security changes."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:71
+msgid "The chosen secret slug is reserved and cannot be used."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:256
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:289
+msgid "Security check failed."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:312
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:313
+msgid "Login Support"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:349
+msgid "All other user sessions were terminated."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:357
+msgid "Security Utilities:"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:360
+msgid "Immediately log out all other users?"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:361
+msgid "Force Global Logout"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:365
+msgid "Generate One-Time Recovery Link"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:370
+msgid "Use this one-time URL immediately and store it securely:"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:387
+msgid "Configuration"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:391
+msgid "Activate Stealth Mode"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:400
+msgid "Secret Slug"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:403
+msgid "Example: secure-login. Do not use wp-admin or wp-login.php."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:407
+msgid "Enable Recovery Mode"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:413
+msgid "Allow temporary one-time token access to recover login URL access."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:417
+msgid "Recovery Token Lifetime (minutes)"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:421
+msgid "Enable Login Rate Limiting"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:430
+msgid "Max Failed Attempts"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:434
+msgid "Attempt Window (minutes)"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:438
+msgid "Lockout Duration (minutes)"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:442
+msgid "Enable Security Event Logging"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:451
+msgid "Log Retention (days)"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:459
+msgid "Security Event Log"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:462
+msgid "Clear all security logs?"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:462
+msgid "Clear Logs"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:467
+msgid "Date"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:468
+msgid "Event"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:469
+msgid "User"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:470
+msgid "IP"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:471
+msgid "Details"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:476
+msgid "No events recorded yet."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:492
+msgid "Save Settings"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:562
+msgid "Too many failed attempts. Please try again later."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:620
+msgid "Login Support Security Configuration"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:635
+msgid "Stealth Mode is disabled or secret slug is empty."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:641
+msgid "Login rate limiting is disabled."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:647
+msgid "Security event logging is disabled."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:652
+msgid "Login Support security controls are active."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:655
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:668
+msgid "Security"
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:658
+msgid "Stealth mode, rate limiting, and event logging are enabled."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:665
+msgid "Login Support security controls need attention."
+msgstr ""
+
+#: /workspaces/site-thisismyurl/wp-content/plugins/thisismyurl-login-support/thisismyurl-login-support.php:675
+msgid "Review Login Support settings"
+msgstr ""
