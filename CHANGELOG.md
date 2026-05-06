@@ -5,6 +5,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses the `x.Yddd` versioning scheme defined in the project
 release rules (`x` = release class, `Y` = last digit of year, `ddd` = Julian day).
 
+## [0.6126] — 2026-05-06
+
+### Added
+- Honeypot username trap (issue #37): configurable list (default: `admin`, `root`, `administrator`). Any login attempt against a honeypot name that has no matching user triggers an immediate extended IP ban. List and ban duration are configurable in settings.
+- fail2ban-compatible file log sink (issue #34): opt-in, off by default. Writes one line per failed login (`datetime ip username`) to a configurable absolute path outside the web root. `docs/fail2ban-filter.conf` included with filter definition and `jail.local` example.
+- REST endpoint `GET /wp-json/timu-login-support/v1/lockouts` (issue #31): read-only, `manage_options` auth, returns 403 to unauthorized callers. Backed by a non-autoloaded lockout registry maintained on each lockout event (200-row cap, expired entries pruned on write).
+- 24-hour failed-login sparkline on the settings page (issue #35): pure `<canvas>`, no external JS. Accessible `aria-label` and `<details>` hourly-breakdown table fallback.
+- Two Factor compatibility panel in settings (issue #29): shows detected/not-detected status, documents yield behavior and override filter, lists tested compatible plugins.
+- `is_two_factor_active()` public method — extracts 2FA detection from `should_skip_for_2fa()` so the UI can surface interop status without duplicating logic.
+- Lockout registry (`LOCKOUT_REGISTRY` constant + `record_lockout()` method) — makes active lockouts enumerable for the REST endpoint and ops dashboards.
+- Honeypot and fail2ban settings rows in the Configuration table.
+- `docs/fail2ban-filter.conf` — ready-to-use fail2ban filter and jail.local example.
+- fr_CA translation and POT file (issue #1).
+- `updater.php` — GitHub Releases-backed self-update mechanism; removed when moving to WordPress.org.
+- `CODE_OF_CONDUCT.md`, `SUPPORT.md`.
+
+### Changed
+- `should_skip_for_2fa()` visibility unchanged (private); `is_two_factor_active()` added as the public entry point for UI use.
+- readme.txt: Translations section, REST API section, updated Features list, brute-force/fail2ban tags added.
+- SECURITY.md: Log Storage Architecture section added, documenting the 500-entry ring-buffer, trade-offs, and future custom-table roadmap.
+
 ## [0.6123] — 2026-05-03
 
 ### Security

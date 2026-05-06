@@ -1,11 +1,11 @@
-# Login Support Support
+# Getting Support
 
-This file explains where to get help, report bugs, and raise accessibility concerns for this plugin.
+Where to go for help, bug reports, and accessibility concerns on this plugin.
 
 ## Support Routes
 
 ### Usage Questions
-Use GitHub Discussions in this repository when available. If Discussions are not enabled, open a GitHub issue with clear steps and context.
+Use GitHub Discussions in this repository if they're enabled. If not, open a GitHub issue with clear steps and context.
 
 ### Bug Reports
 Open a GitHub issue and include:
@@ -20,15 +20,14 @@ Open a GitHub issue and include:
 - relevant logs or screenshots
 
 ### Security Reports
-Do not report security vulnerabilities in public issues.
-Follow SECURITY.md for responsible disclosure.
+Don't report security vulnerabilities in public issues. Follow SECURITY.md for responsible disclosure.
 
 ### Accessibility Barriers
-Accessibility issues are treated as product bugs. Report reproducible barriers through GitHub issues, including keyboard and screen-reader behaviour where possible.
+Accessibility issues are bugs. Report reproducible barriers through GitHub issues, with keyboard and screen-reader behaviour noted where you can.
 
 ## Response Expectations
 
-Support is provided on a best-effort basis. Reports with clear reproduction steps are triaged faster.
+Support is best-effort. Reports with clear reproduction steps get triaged faster, every time.
 
 ## Scope
 

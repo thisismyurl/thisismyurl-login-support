@@ -1,6 +1,6 @@
 ## What this PR does
 
-<!-- Brief description of the change and why it was made. -->
+<!-- What changed and why. Keep it short. -->
 
 ## Type of change
 
@@ -11,7 +11,7 @@
 
 ## Testing
 
-Describe the testing you did. Include WP version, PHP version, and specific scenarios tested.
+What you tested and how. Include WP version, PHP version, and the scenarios you ran through.
 
 - WordPress version:
 - PHP version:
@@ -21,7 +21,6 @@ Describe the testing you did. Include WP version, PHP version, and specific scen
 
 - [ ] Follows [WordPress Coding Standards](https://developer.wordpress.org/coding-standards/)
 - [ ] No syntax errors (`php -l` clean)
-- [ ] All existing behaviour is preserved (or change is intentional and documented)
+- [ ] Existing behaviour is preserved (or the change is intentional and documented)
 - [ ] No hard-coded credentials, paths, or environment-specific values
 - [ ] Closes #<!-- issue number, if applicable -->
-

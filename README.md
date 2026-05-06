@@ -3,21 +3,18 @@
 [![CI](https://github.com/thisismyurl/thisismyurl-login-support/actions/workflows/ci.yml/badge.svg)](https://github.com/thisismyurl/thisismyurl-login-support/actions/workflows/ci.yml) [![WordPress Tested](https://img.shields.io/badge/WordPress-6.8%2B-blue)](https://wordpress.org/) [![License](https://img.shields.io/badge/License-GPL--2.0-blue)](LICENSE)
 
 
-WordPress plugin to support stealth login URL shifting and admin-side login security utilities.
+Shifts the WordPress login URL to a path you control and adds a few admin-side utilities for hardening the login flow.
 
 ## Current Version
 
-`0.6123` (format: `x.Yddd`)
+`0.6126` (format: `x.Yddd`)
 
 - `x` = release class (`0` = pre-release, `1` = full release).
 - `Y` = last digit of the current year.
 - `ddd` = Julian day number.
 - Example for May 3, 2026: year digit `6` + day `123` => `0.6123`.
 
-This README is the developer-facing entry point — repo layout, contribution
-flow, security advisories. End-user documentation (features, settings,
-FAQ, changelog) lives in [`readme.txt`](readme.txt) for parity with the
-WordPress.org plugin directory listing.
+This README is for developers working on the plugin: repo layout, contribution flow, security advisories. End-user docs (features, settings, FAQ, changelog) live in [`readme.txt`](readme.txt) so the WordPress.org listing stays in sync.
 
 ## Security Advisories
 
@@ -25,8 +22,7 @@ WordPress.org plugin directory listing.
 |---|---|---|---|
 | [`GHSA-p369-rjwx-f44g`](https://github.com/thisismyurl/thisismyurl-login-support/security/advisories) | High | ≤ 0.6112 | 0.6123 |
 
-If you discover a vulnerability, please follow the disclosure process in
-[SECURITY.md](SECURITY.md) — do **not** open a public issue.
+If you find a vulnerability, follow the disclosure process in [SECURITY.md](SECURITY.md). Don't open a public issue.
 
 ## Repository Layout
 
@@ -51,7 +47,7 @@ composer run lint:phpstan      # static analysis
 php -l thisismyurl-login-support.php   # quick syntax check
 ```
 
-CI runs the PHP lint matrix and PHPCS on every PR.
+CI runs the PHP lint matrix and PHPCS on every PR. If those go red, the PR doesn't merge.
 
 ## License
 
@@ -63,50 +59,48 @@ GPL-2.0-or-later
 
 ### Ways to Support
 
-I build these tools because WordPress sites in the wild keep hitting the same problems, and a focused plugin is usually the right fix. There's no tracking, no ads, and you don't need to pay to use these plugins.
+I write these plugins because I keep running into the same WordPress problems on real client sites, and a small focused plugin is usually the right shape of fix. No tracking, no ads, no paywall.
 
-If you find them helpful, here are some genuine ways to support the work:
+If one of these saves you a headache, here's what actually helps:
 
-- **Sponsor if it fits your budget:** You can sponsor the project through [GitHub Sponsors](https://github.com/sponsors/thisismyurl). Sponsorship helps, but it's always optional.
-- **Contribute code or ideas:** Opening a pull request, reporting an issue, or testing edge cases is just as valuable as sponsorship. Helping me improve these plugins is a great way to contribute.
-- **Share your experience:** A follow on [WordPress.org](https://profiles.wordpress.org/thisismyurl/), [GitHub](https://github.com/thisismyurl), or [LinkedIn](https://linkedin.com/in/thisismyurl) helps others find this work.
+- **Sponsor if you can:** [GitHub Sponsors](https://github.com/sponsors/thisismyurl). Optional, never expected.
+- **Send a PR or a bug report:** an issue with reproduction steps is worth more to me than a five-star review. Edge-case testing is gold.
+- **Follow the work:** [WordPress.org](https://profiles.wordpress.org/thisismyurl/), [GitHub](https://github.com/thisismyurl), [LinkedIn](https://linkedin.com/in/thisismyurl). Helps the next person find it.
 
 ### Report Issues and Questions
 
-Found a bug? Want to suggest a feature? Just curious how something works?
-
-- **File an issue:** Use the [Issues](../../issues) tab. Include your WordPress and PHP version, and steps to reproduce.
-- **Start a discussion:** Use the [Discussions](../../discussions) tab for questions, ideas, or general conversation about the plugin.
+- **File an issue:** the [Issues](../../issues) tab. Include WordPress version, PHP version, and steps to reproduce.
+- **Start a discussion:** the [Discussions](../../discussions) tab for questions, ideas, or anything that isn't a clear bug.
 
 ### Contributing Code
 
-Code contributions are welcome and genuinely valuable. Here's the workflow:
+PRs are welcome. The flow:
 
-1. **Fork this repository** and clone it locally.
-2. **Create a feature branch** with a clear name (e.g., `feature/improve-safety-check`).
-3. **Make your changes** and test thoroughly on edge cases.
-4. **Follow WordPress coding standards** — run `composer run lint:phpcs` before opening a PR.
-5. **Open a pull request** with a clear description of what changed and why.
+1. Fork and clone locally.
+2. Branch with a descriptive name (e.g., `feature/improve-safety-check`).
+3. Make the change. Test it on the edge cases that bit you.
+4. Run `composer run lint:phpcs` before opening the PR.
+5. Open the PR with a clear note on what changed and why.
 
-I review PRs thoughtfully and appreciate well-tested contributions. Contributing is never required, but it's genuinely helpful.
+I read every PR. Well-tested ones merge faster.
 
 ---
 
 
 ## About This Is My URL
 
-This plugin supports the work I do at [This Is My URL](https://thisismyurl.com/wordpress-security/), where I help WordPress teams build secure, performant, and maintainable sites.
+This plugin comes out of the work I do at [This Is My URL](https://thisismyurl.com/wordpress-security/), helping WordPress teams keep their sites secure, fast, and maintainable.
 
-This plugin is built and maintained by [This Is My URL](https://thisismyurl.com/), a WordPress development and technical SEO practice. I'm Christopher Ross, a WordPress developer and technical SEO specialist with 30 years of experience on the open web (since 1996) and 19 years on WordPress (since 2007).
+I'm Christopher Ross. I've been on the open web since 1996 and on WordPress since 2007. This Is My URL is my WordPress development and technical SEO practice, based in Fort Erie, Ontario.
 
 ### My Background
 
-- **30 years on the open web** (since 1996), with 19 of those years on WordPress (since 2007)
-- **WordPress contributor since 2007** — plugins published on .org, code shipped to media, education, and government deployments
-- **Technical SEO practitioner** helping sites improve performance, security, and search visibility
-- **Training specialist** at M.L. Campbell — building learning systems that ship, not slides that don't
+- **30 years on the open web** (since 1996), 19 of those on WordPress (since 2007)
+- **WordPress contributor since 2007** with plugins on .org and code shipped to media, education, and government deployments
+- **Technical SEO** focused on performance, security, and search visibility on real sites
+- **Training specialist** at M.L. Campbell, building learning systems that ship
 
-I believe in straightforward solutions that work. No hype. No unnecessary complexity.
+I prefer plain solutions that work. No hype, no extra moving parts.
 
 ### Ways to Connect
 
@@ -119,7 +113,7 @@ I believe in straightforward solutions that work. No hype. No unnecessary comple
 ## Contributors
 
 - **Christopher Ross** ([@thisismyurl](https://github.com/thisismyurl)) — author and maintainer
-- **Contributors:** Thanks to everyone who's reported issues, tested edge cases, and contributed code
+- **Contributors:** everyone who's filed an issue, tested an edge case, or sent a PR. Thank you.
 
 ## License
 

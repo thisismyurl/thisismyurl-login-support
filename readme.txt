@@ -5,7 +5,7 @@ Tags: login, security, wp-login, rate limit, site health, brute force, fail2ban
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 0.6123
+Stable tag: 0.6126
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -114,7 +114,7 @@ I review PRs thoughtfully and appreciate well-tested contributions. Contributing
 
 == Changelog ==
 
-= 0.6124 =
+= 0.6126 =
 * Added honeypot username trap (issue #37) — configurable list, extended IP ban, log event.
 * Added fail2ban-compatible file log sink (issue #34) — off by default, path-validated, `docs/fail2ban-filter.conf` included.
 * Added REST endpoint `GET /wp-json/timu-login-support/v1/lockouts` (issue #31) — read-only, `manage_options` auth.
@@ -168,6 +168,9 @@ Example response:
 Want to contribute a translation? Visit [translate.wordpress.org](https://translate.wordpress.org/) once the plugin is listed there, or open a pull request on GitHub with a `.po` file.
 
 == Upgrade Notice ==
+
+= 0.6126 =
+Adds honeypot username trap, fail2ban file log integration, REST lockout endpoint, 24-hour sparkline, Two Factor compatibility panel, fr_CA translation, and lockout registry for ops dashboards.
 
 = 0.6123 =
 Critical security fix for advisory GHSA-p369-rjwx-f44g (inverted rate limiter). Update immediately. Adds per-IP lockout, 2FA compatibility, WP-CLI escape hatch, and Application Password carve-out.

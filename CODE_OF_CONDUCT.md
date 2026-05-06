@@ -2,7 +2,7 @@
 
 ## Our Commitment
 
-This project aims to be welcoming, respectful, and practical for everyone who participates.
+This project should be a place where people can show up, ask questions, file issues, and ship code without putting up with bad behaviour. That goes for everyone, including me.
 
 ## Expected Behaviour
 
@@ -22,16 +22,16 @@ This project aims to be welcoming, respectful, and practical for everyone who pa
 
 ## Scope
 
-This Code applies to project spaces, including issues, pull requests, discussions, and related support conversations.
+This applies anywhere the project lives: issues, pull requests, discussions, and any support conversations tied to it.
 
 ## Reporting
 
-If you experience or witness harmful behaviour, report it privately to the maintainers through the project contact route.
+If something happens to you here, or you see it happen to someone else, tell me privately through the project contact route. I'll take it seriously.
 
 For security concerns, use SECURITY.md.
 
 ## Enforcement
 
-Maintainers may edit, remove, or reject contributions and interactions that violate this Code, and may restrict participation when needed to protect the community.
+I can edit, remove, or reject contributions and interactions that break this code, and I can restrict participation when that's what it takes to keep the project a decent place to work.
 
-Retaliation against people who report concerns is not allowed.
+Retaliation against people who report concerns is not tolerated.

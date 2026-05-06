@@ -1,25 +1,25 @@
 # Contributing to This Is My URL Plugins
 
-Thank you for your interest in contributing to This Is My URL plugins. This is a community effort, and all contributions are welcome.
+If you've used one of these plugins and want to help make it better, this is the place to start. Code, bug reports, edge-case testing — all useful.
 
 ## Code of Conduct
 
-Be respectful and inclusive. We're here to help each other build better tools.
+Be respectful. Assume good intent. We're working on the same problem from different angles.
 
 ## How to Contribute
 
 ### Reporting Issues
 
-Found a bug or have a feature idea?
+Found a bug or have an idea?
 
 1. Check existing issues first to avoid duplicates.
-2. Create a new issue with a clear title and description.
-3. Include steps to reproduce for bugs.
-4. Include your WordPress version and PHP version.
+2. Open a new issue with a clear title and description.
+3. For bugs, include reproduction steps.
+4. Include your WordPress and PHP version.
 
 ### Submitting Code
 
-We welcome pull requests. Here's how:
+PRs are welcome. The flow:
 
 1. Fork the repository.
 2. Create a branch for your change: `git checkout -b feature/your-feature-name`
@@ -46,10 +46,8 @@ We welcome pull requests. Here's how:
 
 ### Review Timeline
 
-I review contributions within 1-2 weeks when possible. I appreciate your patience.
+I aim to review within 1-2 weeks. Sometimes it's faster, sometimes slower depending on what else is on. Thanks for your patience.
 
 ## Questions?
 
-Open a discussion or issue and let's chat. All questions are welcome.
-
-Thank you for contributing! 🙏
+Open a discussion or an issue. Any question is fair game.
