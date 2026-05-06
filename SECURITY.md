@@ -116,6 +116,47 @@ broader protection.
   cheaply. On hosts without one, transients fall back to the options
   table — still durable, but heavier on writes for high-traffic sites.
 
+## Log Storage Architecture
+
+Login Support's security event log is stored in a single, non-autoloaded
+`wp_options` row (`thisismyurl-login-support_logs`).
+
+**Default behaviour**
+
+| Property | Value |
+|---|---|
+| Row type | `wp_options`, non-autoloaded (`false`) |
+| Max entries | 500 (ring-buffer — oldest entries are dropped when the cap is reached) |
+| Max size | ~100 KB at 500 entries (worst-case, long usernames + IPs) |
+| Retention pruning | On every write; entries older than `log_retention_days` are removed |
+
+**Trade-off**
+
+This approach works out of the box on any WordPress installation with no
+schema migration. The downside is that under an active brute-force storm
+every failed login rewrites the entire `wp_options` row. With the 500-entry
+cap the row stays bounded, but on a high-traffic site the write frequency
+can cause `wp_options` row contention.
+
+**Mitigations already in place**
+
+- 500-entry ring-buffer cap limits the maximum row size.
+- Non-autoloaded storage: the row is never loaded on uncached front-end
+  page views, only on admin and login-path requests where logging is active.
+
+**Future: opt-in custom table**
+
+Issue [#18](https://github.com/thisismyurl/thisismyurl-login-support/issues/18)
+tracks adding an opt-in `{prefix}timu_login_support_log` custom table with
+proper indexes for high-traffic deployments. This is not yet implemented —
+the default option-based storage remains unchanged and is the only mode
+available today.
+
+If you are operating a site under sustained attack and observe database
+contention, a short-term mitigation is to lower `log_retention_days` (which
+accelerates pruning) or temporarily disable event logging from the settings
+page.
+
 ## Changelog and Updates
 
 Check [CHANGELOG.md](CHANGELOG.md) and [GitHub Releases](../../releases) for security-related updates and fixes.

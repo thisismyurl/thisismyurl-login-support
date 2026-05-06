@@ -10,6 +10,9 @@
  * Domain Path: /languages
  * License:     GPL-2.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
+ * GitHub Plugin URI: https://github.com/thisismyurl/thisismyurl-login-support
+ * Primary Branch:    main
+ * Update URI:        https://github.com/thisismyurl/thisismyurl-login-support
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -20,7 +23,8 @@ require_once plugin_dir_path( __FILE__ ) . 'core/class-timu-core.php';
 
 class TIMU_Login_Support extends TIMU_Core_v1 {
 
-    const LOG_OPTION = 'thisismyurl-login-support_logs';
+    const LOG_OPTION       = 'thisismyurl-login-support_logs';
+    const LOCKOUT_REGISTRY = 'thisismyurl-login-support_lockouts';
 
     public function __construct() {
         parent::__construct( 'thisismyurl-login-support', plugin_dir_url( __FILE__ ), 'timu_login_group' );
@@ -70,6 +74,7 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
         add_action( 'wp_authenticate_application_password_errors', array( $this, 'mark_application_password_failure' ), 10, 4 );
         add_action( 'update_option_' . $this->plugin_slug . '_options', array( $this, 'handle_option_updates' ), 10, 2 );
         add_filter( 'site_status_tests', array( $this, 'register_site_health_tests' ) );
+        add_action( 'rest_api_init', array( $this, 'register_rest_routes' ) );
     }
 
     public function load_textdomain() {
@@ -94,6 +99,58 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
         $input['lockout_minutes']      = isset( $input['lockout_minutes'] ) ? max( 1, min( 1440, absint( $input['lockout_minutes'] ) ) ) : $defaults['lockout_minutes'];
         $input['recovery_token_ttl']   = isset( $input['recovery_token_ttl'] ) ? max( 5, min( 180, absint( $input['recovery_token_ttl'] ) ) ) : $defaults['recovery_token_ttl'];
         $input['log_retention_days']   = isset( $input['log_retention_days'] ) ? max( 1, min( 365, absint( $input['log_retention_days'] ) ) ) : $defaults['log_retention_days'];
+
+        // Honeypot username list (issue #37). Accept comma- or whitespace-separated
+        // entries, normalise each to a sanitize_title-safe slug, drop empties and
+        // duplicates, re-join with commas for storage.
+        if ( isset( $input['honeypot_usernames'] ) ) {
+            $raw   = sanitize_textarea_field( wp_unslash( $input['honeypot_usernames'] ) );
+            $parts = preg_split( '/[\s,]+/', $raw );
+            $clean = array();
+
+            if ( is_array( $parts ) ) {
+                foreach ( $parts as $part ) {
+                    $slug = sanitize_title( $part );
+
+                    if ( '' !== $slug && ! in_array( $slug, $clean, true ) ) {
+                        $clean[] = $slug;
+                    }
+                }
+            }
+
+            $input['honeypot_usernames'] = implode( ',', $clean );
+        } else {
+            $input['honeypot_usernames'] = $defaults['honeypot_usernames'];
+        }
+
+        $input['honeypot_ban_minutes'] = isset( $input['honeypot_ban_minutes'] ) ? max( 1, min( 1440, absint( $input['honeypot_ban_minutes'] ) ) ) : $defaults['honeypot_ban_minutes'];
+
+        // fail2ban-compatible file log (issue #34).
+        $input['enable_file_log'] = empty( $input['enable_file_log'] ) ? 0 : 1;
+
+        if ( isset( $input['file_log_path'] ) ) {
+            $path = trim( sanitize_text_field( wp_unslash( $input['file_log_path'] ) ) );
+
+            if ( '' !== $path ) {
+                $abspath_real = realpath( ABSPATH );
+                $is_absolute  = ( '/' === substr( $path, 0, 1 ) ) || preg_match( '/^[A-Za-z]:[\\\\\/]/', $path );
+                $within_web   = $abspath_real && 0 === strpos( $path, $abspath_real );
+
+                if ( ! $is_absolute || $within_web || false !== strpos( $path, '..' ) ) {
+                    add_settings_error(
+                        $this->plugin_slug,
+                        'invalid_file_log_path',
+                        esc_html__( 'The fail2ban log path must be absolute and outside the WordPress web root.', 'thisismyurl-login-support' ),
+                        'error'
+                    );
+                    $path = '';
+                }
+            }
+
+            $input['file_log_path'] = $path;
+        } else {
+            $input['file_log_path'] = '';
+        }
 
         if ( isset( $input['slug'] ) ) {
             $blocked_slugs = array( 'wp-admin', 'wp-login.php', 'xmlrpc.php' );
@@ -124,6 +181,10 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
             'lockout_minutes'      => 30,
             'enable_event_logging' => 1,
             'log_retention_days'   => 30,
+            'honeypot_usernames'   => 'admin,root,administrator',
+            'honeypot_ban_minutes' => 60,
+            'enable_file_log'      => 0,
+            'file_log_path'        => '',
         );
     }
 
@@ -338,6 +399,72 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
         return max( $per_account_attempts, $per_account_attempts * $multiplier );
     }
 
+    /**
+     * Record an active lockout in the enumerable registry so the REST endpoint
+     * can list current lockouts without scanning all transient keys. Expired
+     * entries are pruned on each write; the registry is capped at 200 rows.
+     *
+     * @param string $type  'account' or 'ip'.
+     * @param string $value The locked value (username or IP).
+     * @param int    $until Unix timestamp when the lockout expires.
+     */
+    private function record_lockout( $type, $value, $until ) {
+        $registry = get_option( self::LOCKOUT_REGISTRY, array() );
+        $registry = is_array( $registry ) ? $registry : array();
+        $now      = time();
+
+        // Drop expired entries and any existing entry for this exact key.
+        $pruned = array();
+        foreach ( $registry as $entry ) {
+            if ( ! isset( $entry['until'] ) || $entry['until'] <= $now ) {
+                continue;
+            }
+            if ( $entry['type'] === $type && $entry['value'] === $value ) {
+                continue; // replaced below.
+            }
+            $pruned[] = $entry;
+        }
+
+        $pruned[] = array(
+            'type'  => $type,
+            'value' => $value,
+            'until' => $until,
+        );
+
+        if ( count( $pruned ) > 200 ) {
+            $pruned = array_slice( $pruned, -200 );
+        }
+
+        update_option( self::LOCKOUT_REGISTRY, $pruned, false );
+    }
+
+    /**
+     * Report whether a recognised 2FA plugin is currently active.
+     * Public so render_ui() can surface interop status without duplicating
+     * the detection logic.
+     *
+     * @return bool
+     */
+    public function is_two_factor_active() {
+        if ( ! function_exists( 'is_plugin_active' ) ) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+
+        $known = array(
+            'two-factor/two-factor.php',
+            'wp-2fa/wp-2fa.php',
+            'miniorange-2-factor-authentication/miniorange_2_factor_settings.php',
+        );
+
+        foreach ( $known as $plugin_file ) {
+            if ( is_plugin_active( $plugin_file ) ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function log_event( $event, $details = '', $user_login = '' ) {
         $options = $this->get_controlled_options();
 
@@ -362,6 +489,14 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
         }
 
         update_option( self::LOG_OPTION, $logs, false );
+
+        // fail2ban-compatible file sink (issue #34). Off by default; only writes
+        // when the operator has enabled it and supplied a valid path.
+        if ( ! empty( $options['enable_file_log'] ) && ! empty( $options['file_log_path'] ) ) {
+            $ip_for_file  = isset( $logs[ count( $logs ) - 1 ]['ip'] ) ? $logs[ count( $logs ) - 1 ]['ip'] : $this->get_client_ip();
+            $line         = date( 'Y-m-d H:i:s' ) . ' ' . $ip_for_file . ' ' . $user_login . "\n"; // phpcs:ignore WordPress.DateTime.RestrictedFunctions.date_date
+            @file_put_contents( $options['file_log_path'], $line, FILE_APPEND | LOCK_EX ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+        }
     }
 
     private function prune_logs() {
@@ -730,6 +865,34 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
                                             <th scope="row"><?php esc_html_e( 'Log Retention (days)', 'thisismyurl-login-support' ); ?></th>
                                             <td><input type="number" min="1" max="365" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[log_retention_days]" value="<?php echo esc_attr( (string) $options['log_retention_days'] ); ?>" class="small-text" /></td>
                                         </tr>
+                                        <tr>
+                                            <th scope="row"><?php esc_html_e( 'Honeypot Usernames', 'thisismyurl-login-support' ); ?></th>
+                                            <td>
+                                                <textarea name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[honeypot_usernames]" rows="3" class="regular-text"><?php echo esc_textarea( $options['honeypot_usernames'] ); ?></textarea>
+                                                <p class="description"><?php esc_html_e( 'Comma-separated usernames. Any login attempt against these names — when no matching user exists on this site — triggers an immediate extended IP ban.', 'thisismyurl-login-support' ); ?></p>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <th scope="row"><?php esc_html_e( 'Honeypot Ban Duration (minutes)', 'thisismyurl-login-support' ); ?></th>
+                                            <td><input type="number" min="1" max="1440" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[honeypot_ban_minutes]" value="<?php echo esc_attr( (string) $options['honeypot_ban_minutes'] ); ?>" class="small-text" /></td>
+                                        </tr>
+                                        <tr>
+                                            <th scope="row"><?php esc_html_e( 'Enable fail2ban File Log', 'thisismyurl-login-support' ); ?></th>
+                                            <td>
+                                                <label class="timu-switch">
+                                                    <input type="checkbox" class="timu-toggle-trigger" data-target=".timu-conditional-filelog" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[enable_file_log]" value="1" <?php checked( 1, (int) $options['enable_file_log'] ); ?>>
+                                                    <span class="timu-slider"></span>
+                                                </label>
+                                                <p class="description"><?php esc_html_e( 'Write one line per failed login to a file for fail2ban integration.', 'thisismyurl-login-support' ); ?></p>
+                                            </td>
+                                        </tr>
+                                        <tr class="timu-conditional-filelog">
+                                            <th scope="row"><?php esc_html_e( 'Log File Path', 'thisismyurl-login-support' ); ?></th>
+                                            <td>
+                                                <input type="text" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[file_log_path]" value="<?php echo esc_attr( $options['file_log_path'] ); ?>" class="regular-text" placeholder="/var/log/wp-login-support.log" />
+                                                <p class="description"><?php esc_html_e( 'Absolute path outside the web root. The web server must have write permission. Format per line: YYYY-MM-DD HH:MM:SS ip username', 'thisismyurl-login-support' ); ?></p>
+                                            </td>
+                                        </tr>
                                         <?php $this->render_registration_field(); ?>
                                     </table>
                                 </div>
@@ -766,6 +929,93 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
                                             <?php endif; ?>
                                         </tbody>
                                     </table>
+                                </div>
+                            </div>
+                            <div class="timu-card">
+                                <div class="timu-card-header"><?php esc_html_e( 'Failed Login Attempts — Last 24 Hours', 'thisismyurl-login-support' ); ?></div>
+                                <div class="timu-card-body">
+                                    <?php
+                                    // Build 24 hourly buckets (index 0 = oldest, 23 = current hour).
+                                    $sparkline_now     = time();
+                                    $sparkline_buckets = array_fill( 0, 24, 0 );
+                                    $sparkline_logs    = get_option( self::LOG_OPTION, array() );
+
+                                    foreach ( (array) $sparkline_logs as $sl_entry ) {
+                                        if ( empty( $sl_entry['event'] ) || false === stripos( $sl_entry['event'], 'failed' ) ) {
+                                            continue;
+                                        }
+                                        $age_hours = (int) floor( ( $sparkline_now - (int) $sl_entry['time'] ) / 3600 );
+                                        if ( $age_hours >= 0 && $age_hours < 24 ) {
+                                            $sparkline_buckets[ 23 - $age_hours ]++;
+                                        }
+                                    }
+                                    $sparkline_max   = max( 1, max( $sparkline_buckets ) );
+                                    $sparkline_total = array_sum( $sparkline_buckets );
+                                    ?>
+                                    <canvas id="timu-sparkline" width="600" height="80"
+                                        role="img"
+                                        aria-label="<?php echo esc_attr( sprintf( /* translators: %d = number of failed login attempts */ __( '%d failed login attempts in the last 24 hours', 'thisismyurl-login-support' ), $sparkline_total ) ); ?>"
+                                        style="max-width:100%;border:1px solid #dcdcde;border-radius:3px;">
+                                        <p><?php echo esc_html( sprintf( /* translators: %d = total failed attempts */ __( '%d failed login attempts in the last 24 hours.', 'thisismyurl-login-support' ), $sparkline_total ) ); ?></p>
+                                    </canvas>
+                                    <script>
+                                    (function(){
+                                        var data = <?php echo wp_json_encode( $sparkline_buckets ); ?>;
+                                        var max  = <?php echo (int) $sparkline_max; ?>;
+                                        var c    = document.getElementById('timu-sparkline');
+                                        if (!c || !c.getContext) return;
+                                        var ctx  = c.getContext('2d');
+                                        var w = c.width, h = c.height;
+                                        var barW = Math.floor(w / data.length);
+                                        var gap  = 2;
+                                        ctx.clearRect(0, 0, w, h);
+                                        for (var i = 0; i < data.length; i++) {
+                                            var val    = data[i];
+                                            var barH   = val > 0 ? Math.max(4, Math.round((val / max) * (h - 8))) : 2;
+                                            var x      = i * barW + gap;
+                                            var y      = h - barH;
+                                            ctx.fillStyle = val > 0 ? '#d63638' : '#dcdcde';
+                                            ctx.fillRect(x, y, barW - gap * 2, barH);
+                                        }
+                                    })();
+                                    </script>
+                                    <details style="margin-top:8px;">
+                                        <summary><?php esc_html_e( 'Hourly breakdown', 'thisismyurl-login-support' ); ?></summary>
+                                        <table class="widefat striped" style="margin-top:6px;">
+                                            <thead><tr><th><?php esc_html_e( 'Hour (oldest → newest)', 'thisismyurl-login-support' ); ?></th><th><?php esc_html_e( 'Failed attempts', 'thisismyurl-login-support' ); ?></th></tr></thead>
+                                            <tbody>
+                                            <?php for ( $i = 0; $i < 24; $i++ ) : ?>
+                                                <tr>
+                                                    <td><?php echo esc_html( sprintf( /* translators: %d = hour offset, 0=oldest */ __( '%d hrs ago', 'thisismyurl-login-support' ), 23 - $i ) ); ?></td>
+                                                    <td><?php echo (int) $sparkline_buckets[ $i ]; ?></td>
+                                                </tr>
+                                            <?php endfor; ?>
+                                            </tbody>
+                                        </table>
+                                    </details>
+                                </div>
+                            </div>
+                            <div class="timu-card">
+                                <div class="timu-card-header"><?php esc_html_e( 'Two Factor Compatibility', 'thisismyurl-login-support' ); ?></div>
+                                <div class="timu-card-body">
+                                    <?php $two_fa_active = $this->is_two_factor_active(); ?>
+                                    <p>
+                                        <strong><?php esc_html_e( 'Status:', 'thisismyurl-login-support' ); ?></strong>
+                                        <?php if ( $two_fa_active ) : ?>
+                                            <span style="color:#00a32a;">&#10003; <?php esc_html_e( 'A compatible Two Factor plugin is active.', 'thisismyurl-login-support' ); ?></span>
+                                        <?php else : ?>
+                                            <span><?php esc_html_e( 'No compatible Two Factor plugin detected.', 'thisismyurl-login-support' ); ?></span>
+                                        <?php endif; ?>
+                                    </p>
+                                    <p><?php esc_html_e( 'When a Two Factor plugin is active, Login Support yields the rate-limit check during the 2FA challenge phase so that the second factor is never blocked by an IP counter.', 'thisismyurl-login-support' ); ?></p>
+                                    <p><?php esc_html_e( 'To enforce rate-limiting on top of 2FA, add this to your theme or a plugin:', 'thisismyurl-login-support' ); ?></p>
+                                    <code>add_filter( 'thisismyurl_login_support_skip_for_2fa', '__return_false' );</code>
+                                    <h4><?php esc_html_e( 'Tested compatible plugins', 'thisismyurl-login-support' ); ?></h4>
+                                    <ul>
+                                        <li>Two Factor (<code>two-factor/two-factor.php</code>)</li>
+                                        <li>WP 2FA (<code>wp-2fa/wp-2fa.php</code>)</li>
+                                        <li>miniOrange 2 Factor Authentication (<code>miniorange-2-factor-authentication/...</code>)</li>
+                                    </ul>
                                 </div>
                             </div>
                             <?php submit_button( esc_html__( 'Save Settings', 'thisismyurl-login-support' ), 'primary large' ); ?>
@@ -937,6 +1187,67 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
     }
 
     /**
+     * Register the read-only REST endpoint for lockout state (issue #31).
+     * Endpoint: GET /wp-json/timu-login-support/v1/lockouts
+     * Auth: manage_options capability.
+     */
+    public function register_rest_routes() {
+        register_rest_route(
+            'timu-login-support/v1',
+            '/lockouts',
+            array(
+                'methods'             => WP_REST_Server::READABLE,
+                'callback'            => array( $this, 'rest_get_lockouts' ),
+                'permission_callback' => array( $this, 'rest_lockouts_permission' ),
+                'schema'              => array( $this, 'rest_lockouts_schema' ),
+            )
+        );
+    }
+
+    public function rest_lockouts_permission() {
+        return current_user_can( 'manage_options' );
+    }
+
+    public function rest_get_lockouts() {
+        $registry = get_option( self::LOCKOUT_REGISTRY, array() );
+        $registry = is_array( $registry ) ? $registry : array();
+        $now      = time();
+        $active   = array();
+
+        foreach ( $registry as $entry ) {
+            if ( ! isset( $entry['until'] ) || $entry['until'] <= $now ) {
+                continue;
+            }
+
+            $active[] = array(
+                'type'         => sanitize_text_field( $entry['type'] ),
+                'identifier'   => sanitize_text_field( $entry['value'] ),
+                'locked_until' => (int) $entry['until'],
+                'ttl_seconds'  => (int) $entry['until'] - $now,
+            );
+        }
+
+        return rest_ensure_response( $active );
+    }
+
+    public function rest_lockouts_schema() {
+        return array(
+            '$schema'    => 'http://json-schema.org/draft-04/schema#',
+            'title'      => 'lockout',
+            'type'       => 'array',
+            'items'      => array(
+                'type'       => 'object',
+                'properties' => array(
+                    'type'         => array( 'type' => 'string', 'enum' => array( 'account', 'ip' ) ),
+                    'identifier'   => array( 'type' => 'string' ),
+                    'locked_until' => array( 'type' => 'integer' ),
+                    'ttl_seconds'  => array( 'type' => 'integer' ),
+                ),
+            ),
+        );
+    }
+
+    /**
      * Mark Application Password failures so track_failed_login() doesn't burn
      * the user/IP rate-limit budget on legitimate API traffic with rotated
      * credentials. Closes audit-finding #10 (P1).
@@ -960,6 +1271,25 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
             $this->log_event( 'Application Password failure (not counted)', 'API path skipped browser-login budget', (string) $username );
             unset( $GLOBALS['timu_login_support_app_password_failure'] );
             return;
+        }
+
+        // Honeypot username check (issue #37). If the attempted username is in
+        // the honeypot list AND doesn't correspond to a real user, treat the
+        // request as malicious and apply an extended IP ban immediately.
+        $honeypot_raw = isset( $options['honeypot_usernames'] ) ? $options['honeypot_usernames'] : 'admin,root,administrator';
+        $honeypot_ban = isset( $options['honeypot_ban_minutes'] ) ? absint( $options['honeypot_ban_minutes'] ) : 60;
+        $honeypots    = array_filter( array_map( 'trim', explode( ',', $honeypot_raw ) ) );
+
+        if ( ! empty( $honeypots ) && in_array( strtolower( (string) $username ), array_map( 'strtolower', $honeypots ), true ) ) {
+            if ( ! get_user_by( 'login', (string) $username ) ) {
+                $ip              = $this->get_client_ip();
+                $ip_lock_key_hp  = $this->get_ip_lockout_cache_key( $ip );
+                $hp_seconds      = MINUTE_IN_SECONDS * $honeypot_ban;
+                set_transient( $ip_lock_key_hp, 1, $hp_seconds );
+                $this->record_lockout( 'ip', $ip, time() + $hp_seconds );
+                $this->log_event( 'Honeypot triggered', sprintf( 'IP banned %d min — username matched honeypot list', $honeypot_ban ), (string) $username );
+                return;
+            }
         }
 
         if ( empty( $options['enable_rate_limit'] ) ) {
@@ -997,12 +1327,14 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
         if ( $attempts >= $per_account_max ) {
             set_transient( $username_lock_key, 1, $lockout_seconds );
             delete_transient( $attempts_key );
+            $this->record_lockout( 'account', $username, time() + $lockout_seconds );
             $this->log_event( 'Rate limit lockout (per account)', 'Lockout triggered for user/IP pair', $username );
         }
 
         if ( $ip_attempts >= $per_ip_max ) {
             set_transient( $ip_lock_key, 1, $lockout_seconds );
             delete_transient( $ip_attempts_key );
+            $this->record_lockout( 'ip', $ip, time() + $lockout_seconds );
             $this->log_event( 'Rate limit lockout (per IP)', 'Lockout triggered for IP — possible username rotation', $username );
         }
     }
@@ -1158,6 +1490,26 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
 }
 
 new TIMU_Login_Support();
+
+/**
+ * GitHub Updater Integration.
+ * Loads the updater logic once all plugins have been loaded by WordPress.
+ */
+add_action( 'plugins_loaded', function() {
+    $updater_path = plugin_dir_path( __FILE__ ) . 'updater.php';
+    if ( file_exists( $updater_path ) ) {
+        require_once $updater_path;
+        if ( class_exists( 'TIMU_GitHub_Updater' ) ) {
+            new TIMU_GitHub_Updater( array(
+                'slug'               => 'thisismyurl-login-support',
+                'proper_folder_name' => 'thisismyurl-login-support',
+                'api_url'            => 'https://api.github.com/repos/thisismyurl/thisismyurl-login-support/releases/latest',
+                'github_url'         => 'https://github.com/thisismyurl/thisismyurl-login-support',
+                'plugin_file'        => __FILE__,
+            ) );
+        }
+    }
+} );
 
 /**
  * WP-CLI escape hatch.

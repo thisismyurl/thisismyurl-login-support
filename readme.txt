@@ -1,7 +1,7 @@
 === Login Support by thisismyurl.com ===
 Contributors: thisismyurl
 Donate link: https://thisismyurl.com/
-Tags: login, security, wp-login, rate limit, site health
+Tags: login, security, wp-login, rate limit, site health, brute force, fail2ban
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
@@ -21,6 +21,11 @@ Features:
 * Set and validate a custom secret login slug.
 * Generate one-time recovery links for safe access restoration.
 * Enable login rate limiting with configurable thresholds.
+* Honeypot username trap — auto-ban IPs that probe known attacker targets (admin, root, administrator) when those users don't exist.
+* fail2ban-compatible log file sink (opt-in) with a ready-to-use filter config.
+* REST API endpoint to query active lockout state (`GET /wp-json/timu-login-support/v1/lockouts`).
+* 24-hour failed-login sparkline on the settings page.
+* Two Factor compatibility panel — works alongside Two Factor, WP 2FA, and miniOrange.
 * Track security events and control log retention.
 * Review plugin posture in WordPress Site Health.
 * Force logout all active user sessions from the settings page.
@@ -109,6 +114,15 @@ I review PRs thoughtfully and appreciate well-tested contributions. Contributing
 
 == Changelog ==
 
+= 0.6124 =
+* Added honeypot username trap (issue #37) — configurable list, extended IP ban, log event.
+* Added fail2ban-compatible file log sink (issue #34) — off by default, path-validated, `docs/fail2ban-filter.conf` included.
+* Added REST endpoint `GET /wp-json/timu-login-support/v1/lockouts` (issue #31) — read-only, `manage_options` auth.
+* Added 24-hour sparkline of failed-login attempts on settings page (issue #35) — pure canvas, accessible text fallback.
+* Added Two Factor compatibility panel to settings page (issue #29).
+* Added translations section to readme.txt and fr_CA translation (issue #1).
+* Added lockout registry so active lockouts are enumerable without transient key scanning.
+
 = 0.6123 =
 * SECURITY: Fixed inverted rate-limiter (advisory GHSA-p369-rjwx-f44g) — a correct password could previously bypass an active lockout. Enforcement now hooks `wp_authenticate` priority 5 and halts BEFORE the password check runs. **All users on 0.6112 should update immediately.**
 * Added per-IP global lockout (defends against username-rotation / credential stuffing).
@@ -131,6 +145,27 @@ I review PRs thoughtfully and appreciate well-tested contributions. Contributing
 * Added Site Health security posture test for plugin configuration.
 * Expanded settings UI so administrators control all security features.
 * Updated documentation to reflect new capabilities and controls.
+
+== REST API ==
+
+`GET /wp-json/timu-login-support/v1/lockouts`
+
+Returns a JSON array of active lockouts (account and IP). Requires `manage_options` capability; returns 403 to unauthorized callers.
+
+Example response:
+
+```json
+[
+  { "type": "ip", "identifier": "1.2.3.4", "locked_until": 1234567890, "ttl_seconds": 1800 },
+  { "type": "account", "identifier": "someuser", "locked_until": 1234567890, "ttl_seconds": 900 }
+]
+```
+
+== Translations ==
+
+* French (Canada) — Christopher Ross
+
+Want to contribute a translation? Visit [translate.wordpress.org](https://translate.wordpress.org/) once the plugin is listed there, or open a pull request on GitHub with a `.po` file.
 
 == Upgrade Notice ==
 
