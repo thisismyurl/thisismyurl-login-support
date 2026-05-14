@@ -4,7 +4,9 @@
  * Plugin URI:  https://thisismyurl.com/
  * Description: Harden login access by allowing a custom login slug and admin security controls.
  * Version:     0.6126
- * Author:      thisismyurl.com
+ * Requires at least: 6.4
+ * Requires PHP: 7.4
+ * Author:      Christopher Ross
  * Author URI:  https://thisismyurl.com/
  * Text Domain: thisismyurl-login-support
  * Domain Path: /languages
