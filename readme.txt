@@ -3,7 +3,7 @@ Contributors: thisismyurl
 Donate link: https://thisismyurl.com/
 Tags: login, security, wp-login, rate limit, site health, brute force, fail2ban
 Requires at least: 6.0
-Tested up to: 6.9
+Tested up to: 7.0
 Requires PHP: 7.4
 Stable tag: 0.6126
 License: GPLv2 or later
