@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses the `x.Yddd` versioning scheme defined in the project
 release rules (`x` = release class, `Y` = last digit of year, `ddd` = Julian day).
 
+## [1.6143] — 2026-05-23
+
+### Changed
+- Promoted to a full release (class 1). The `0.6xxx` line was pre-release on the `x.Yddd` scheme.
+- Standardized the donation link to GitHub Sponsors (`https://github.com/sponsors/thisismyurl`).
+
 ## [0.6126] — 2026-05-06
 
 ### Added

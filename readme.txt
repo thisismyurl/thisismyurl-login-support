@@ -1,11 +1,11 @@
 === Login Support by thisismyurl.com ===
 Contributors: thisismyurl
-Donate link: https://thisismyurl.com/
+Donate link: https://github.com/sponsors/thisismyurl
 Tags: login, security, wp-login, rate limit, site health, brute force, fail2ban
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 0.6126
+Stable tag: 1.6143
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -113,6 +113,10 @@ I review PRs thoughtfully and appreciate well-tested contributions. Contributing
 
 
 == Changelog ==
+
+= 1.6143 =
+* First full release (class 1). The 0.6xxx line was pre-release on the `x.Yddd` scheme.
+* Standardized the donation link to GitHub Sponsors.
 
 = 0.6126 =
 * Added honeypot username trap (issue #37) — configurable list, extended IP ban, log event.
