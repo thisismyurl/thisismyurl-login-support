@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name: Login Support by thisismyurl.com
+ * Plugin Name: This Is My URL - Login Support
  * Plugin URI:  https://thisismyurl.com/
  * Description: Harden login access by allowing a custom login slug and admin security controls.
  * Version:     1.6143
@@ -77,6 +77,18 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
         add_action( 'update_option_' . $this->plugin_slug . '_options', array( $this, 'handle_option_updates' ), 10, 2 );
         add_filter( 'site_status_tests', array( $this, 'register_site_health_tests' ) );
         add_action( 'rest_api_init', array( $this, 'register_rest_routes' ) );
+        add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), array( $this, 'add_action_links' ) );
+    }
+
+    /**
+     * Append a Sponsor link to the plugin row actions.
+     *
+     * @param string[] $links Existing action links.
+     * @return string[]
+     */
+    public function add_action_links( $links ) {
+        $links[] = '<a href="' . esc_url( 'https://github.com/sponsors/thisismyurl' ) . '" target="_blank" rel="noopener noreferrer">' . esc_html__( 'Sponsor', 'thisismyurl-login-support' ) . '</a>';
+        return $links;
     }
 
     public function load_textdomain() {
