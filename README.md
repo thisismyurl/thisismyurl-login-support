@@ -6,7 +6,7 @@ Shifts the WordPress login URL to a path you control and adds a few admin-side u
 
 ## Current version
 
-`0.6126` (format: `x.Yddd`)
+`1.6147` (format: `x.Yddd`)
 
 - `x` = release class (`0` = pre-release, `1` = full release).
 - `Y` = last digit of the current year.

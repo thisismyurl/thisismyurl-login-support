@@ -5,7 +5,7 @@ Tags: login, security, wp-login, rate limit, site health, brute force, fail2ban
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.6143
+Stable tag: 1.6147
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -113,6 +113,11 @@ I review PRs thoughtfully and appreciate well-tested contributions. Contributing
 
 
 == Changelog ==
+
+= 1.6147 =
+* Unified plugin versioning to the x.Yddd calendar-version scheme.
+* Confirmed compatibility with WordPress 7.0.
+
 
 = 1.6143 =
 * First full release (class 1). The 0.6xxx line was pre-release on the `x.Yddd` scheme.
