@@ -1223,6 +1223,22 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
     }
 
     public function rest_get_lockouts() {
+        return rest_ensure_response( self::get_active_lockouts() );
+    }
+
+    /**
+     * Read the lockout registry and return only the currently-active lockouts.
+     *
+     * Single source of truth for "what is locked out right now" — shared by the
+     * REST endpoint and the WP 7 Abilities API registration. Expired rows are
+     * skipped (the registry is pruned lazily on write, so this read-side filter
+     * is what guarantees freshness).
+     *
+     * @since 1.6147
+     *
+     * @return array<int, array{type:string, identifier:string, locked_until:int, ttl_seconds:int}>
+     */
+    public static function get_active_lockouts() {
         $registry = get_option( self::LOCKOUT_REGISTRY, array() );
         $registry = is_array( $registry ) ? $registry : array();
         $now      = time();
@@ -1241,7 +1257,7 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
             );
         }
 
-        return rest_ensure_response( $active );
+        return $active;
     }
 
     public function rest_lockouts_schema() {
@@ -1504,6 +1520,11 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
 }
 
 new TIMU_Login_Support();
+
+// WP 7 Abilities API: expose read-only login-lockout status. The callback
+// inside fires on `wp_abilities_api_init` (WordPress 6.9+), long after the
+// class above is defined, so this require order is safe.
+require_once plugin_dir_path( __FILE__ ) . 'abilities.php';
 
 /**
  * GitHub Updater Integration.

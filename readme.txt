@@ -115,6 +115,7 @@ I review PRs thoughtfully and appreciate well-tested contributions. Contributing
 == Changelog ==
 
 = 1.6147 =
+* Added WordPress 7.0 Abilities API support: the read-only `thisismyurl-login-support/get-lockout-status` ability reports active login lockouts to admins and AI agents (manage_options only). The secret login slug is never exposed.
 * Unified plugin versioning to the x.Yddd calendar-version scheme.
 * Confirmed compatibility with WordPress 7.0.
 
