@@ -3,7 +3,7 @@
  * Plugin Name: This Is My URL - Login Support
  * Plugin URI:  https://thisismyurl.com/
  * Description: Harden login access by allowing a custom login slug and admin security controls.
- * Version:     1.6148.2110
+ * Version:     1.6149.0734
  * Requires at least: 6.4
  * Requires PHP: 7.4
  * Author:      Christopher Ross
@@ -19,7 +19,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TIMU_LOGIN_SUPPORT_VERSION', '1.6148.2110' );
+define( 'TIMU_LOGIN_SUPPORT_VERSION', '1.6149.0734' );
 
 require_once plugin_dir_path( __FILE__ ) . 'core/class-timu-core.php';
 
@@ -1574,19 +1574,12 @@ require_once plugin_dir_path( __FILE__ ) . 'abilities.php';
  * Loads the updater logic once all plugins have been loaded by WordPress.
  */
 add_action( 'plugins_loaded', function() {
-    $updater_path = plugin_dir_path( __FILE__ ) . 'updater.php';
-    if ( file_exists( $updater_path ) ) {
-        require_once $updater_path;
-        if ( class_exists( 'TIMU_GitHub_Updater' ) ) {
-            new TIMU_GitHub_Updater( array(
-                'slug'               => 'thisismyurl-login-support',
-                'proper_folder_name' => 'thisismyurl-login-support',
-                'api_url'            => 'https://api.github.com/repos/thisismyurl/thisismyurl-login-support/releases/latest',
-                'github_url'         => 'https://github.com/thisismyurl/thisismyurl-login-support',
-                'plugin_file'        => __FILE__,
-            ) );
-        }
-    }
+    require_once plugin_dir_path( __FILE__ ) . 'github-updater.php';
+    \ThisIsMyURL\LoginSupport\GitHubReleaseUpdater::boot( array(
+        'plugin_file' => __FILE__,
+        'slug'        => 'thisismyurl-login-support',
+        'repo'        => 'thisismyurl/thisismyurl-login-support',
+    ) );
 } );
 
 /**
