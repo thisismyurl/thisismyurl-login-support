@@ -12,7 +12,15 @@ window.timuInitAdminUi = function( $ ) {
                 return;
             }
 
-            if ( $trigger.is( ':checked' ) ) {
+            var expanded = $trigger.is( ':checked' );
+
+            // Keep aria-expanded in sync with the conditional rows the toggle
+            // reveals (a11y finding P2 / 4.1.2).
+            if ( $trigger.is( '[aria-controls]' ) ) {
+                $trigger.attr( 'aria-expanded', expanded ? 'true' : 'false' );
+            }
+
+            if ( expanded ) {
                 $( target ).stop( true, true ).fadeIn( 150 );
             } else {
                 $( target ).hide();
