@@ -20,6 +20,7 @@ $slug = 'thisismyurl-login-support';
 // Discrete options.
 delete_option( $slug . '_options' );
 delete_option( $slug . '_logs' );
+delete_option( $slug . '_lockouts' );
 
 // Any standalone transients the plugin authored.
 delete_transient( $slug . '_recovery' );

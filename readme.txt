@@ -5,7 +5,7 @@ Tags: login, security, wp-login, rate limit, site health, brute force, fail2ban
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.6147
+Stable tag: 1.6148.2110
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -114,7 +114,17 @@ I review PRs thoughtfully and appreciate well-tested contributions. Contributing
 
 == Changelog ==
 
+= 1.6149 =
+* Accessibility/security: "Clear Logs" is now a real button in a nonce-protected POST form rather than a destructive GET link, matching the Force Global Logout control.
+* Uninstall: the lockout registry option (`_lockouts`) is now removed on plugin deletion — it previously survived uninstall as one orphaned row.
+
+= 1.6148 =
+* Accessibility (WCAG 2.2 AA): the five settings toggle switches now expose a programmatic name via `aria-labelledby`, plus `aria-expanded`/`aria-controls` for the conditional rows they reveal.
+* Accessibility: the Security Event Log table gained `scope="col"` column headers and a caption; the failed-login sparkline now references its hourly-breakdown table via `aria-describedby`.
+* Accessibility/security: "Force Global Logout" is now a real button in a nonce-protected POST form rather than a destructive GET link.
+
 = 1.6147 =
+* Added WordPress 7.0 Abilities API support: the read-only `thisismyurl-login-support/get-lockout-status` ability reports active login lockouts to admins and AI agents (manage_options only). The secret login slug is never exposed.
 * Unified plugin versioning to the x.Yddd calendar-version scheme.
 * Confirmed compatibility with WordPress 7.0.
 
