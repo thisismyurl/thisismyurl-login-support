@@ -1574,19 +1574,12 @@ require_once plugin_dir_path( __FILE__ ) . 'abilities.php';
  * Loads the updater logic once all plugins have been loaded by WordPress.
  */
 add_action( 'plugins_loaded', function() {
-    $updater_path = plugin_dir_path( __FILE__ ) . 'updater.php';
-    if ( file_exists( $updater_path ) ) {
-        require_once $updater_path;
-        if ( class_exists( 'TIMU_GitHub_Updater' ) ) {
-            new TIMU_GitHub_Updater( array(
-                'slug'               => 'thisismyurl-login-support',
-                'proper_folder_name' => 'thisismyurl-login-support',
-                'api_url'            => 'https://api.github.com/repos/thisismyurl/thisismyurl-login-support/releases/latest',
-                'github_url'         => 'https://github.com/thisismyurl/thisismyurl-login-support',
-                'plugin_file'        => __FILE__,
-            ) );
-        }
-    }
+    require_once plugin_dir_path( __FILE__ ) . 'github-updater.php';
+    \ThisIsMyURL\LoginSupport\GitHubReleaseUpdater::boot( array(
+        'plugin_file' => __FILE__,
+        'slug'        => 'thisismyurl-login-support',
+        'repo'        => 'thisismyurl/thisismyurl-login-support',
+    ) );
 } );
 
 /**
