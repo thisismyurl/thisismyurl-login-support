@@ -33,6 +33,7 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
 
         add_action( 'plugins_loaded', array( $this, 'load_textdomain' ) );
         add_action( 'admin_init', array( $this, 'handle_force_logout' ) );
+        add_action( 'admin_init', array( $this, 'handle_clear_logs' ) );
         add_action( 'admin_init', array( $this, 'handle_admin_actions' ) );
         add_action( 'admin_menu', array( $this, 'add_menu' ) );
         /*
@@ -691,12 +692,46 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
             );
         }
 
-        if ( 'clear_logs' === $action ) {
-            update_option( self::LOG_OPTION, array(), false );
-            $this->log_event( 'Security logs cleared', 'Admin cleared all security logs' );
+        wp_safe_redirect( admin_url( 'options-general.php?page=' . $this->plugin_slug ) );
+        exit;
+    }
+
+    /**
+     * Clear the security event log.
+     *
+     * Destructive action: accepts POST only. The settings UI submits this via a
+     * real <button> in a POST form (a11y finding P1 / 4.1.2), mirroring the
+     * Force Global Logout control. The previous GET-link path let any
+     * link-prefetcher or CSRF chain trip the wipe.
+     *
+     * @return void
+     */
+    public function handle_clear_logs() {
+        if ( ! is_admin() || ! current_user_can( 'manage_options' ) ) {
+            return;
         }
 
-        wp_safe_redirect( admin_url( 'options-general.php?page=' . $this->plugin_slug ) );
+        $clear_logs = isset( $_POST['timu_clear_logs'] ) ? absint( wp_unslash( $_POST['timu_clear_logs'] ) ) : 0;
+        $page       = isset( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
+        $nonce      = isset( $_POST['_wpnonce'] ) ? sanitize_text_field( wp_unslash( $_POST['_wpnonce'] ) ) : '';
+
+        if ( 1 !== $clear_logs || $this->plugin_slug !== $page ) {
+            return;
+        }
+
+        if ( ! wp_verify_nonce( $nonce, 'timu_clear_logs' ) ) {
+            wp_die( esc_html__( 'Security check failed.', 'thisismyurl-login-support' ) );
+        }
+
+        update_option( self::LOG_OPTION, array(), false );
+        $this->log_event( 'Security logs cleared', 'Admin cleared all security logs' );
+
+        wp_safe_redirect(
+            remove_query_arg(
+                array( 'timu_clear_logs', '_wpnonce' ),
+                admin_url( 'options-general.php?page=' . $this->plugin_slug )
+            )
+        );
         exit;
     }
 
@@ -755,11 +790,8 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
             admin_url( 'options-general.php?page=' . $this->plugin_slug . '&timu_action=generate_recovery' ),
             'timu_admin_actions'
         );
-        $clear_logs_url      = wp_nonce_url(
-            admin_url( 'options-general.php?page=' . $this->plugin_slug . '&timu_action=clear_logs' ),
-            'timu_admin_actions'
-        );
         $force_logout_action = admin_url( 'options-general.php?page=' . $this->plugin_slug );
+        $clear_logs_action   = $force_logout_action;
         $logs                = get_option( self::LOG_OPTION, array() );
 
         $logs = is_array( $logs ) ? array_reverse( $logs ) : array();
@@ -917,9 +949,15 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
                             <div class="timu-card">
                                 <div class="timu-card-header"><?php esc_html_e( 'Security Event Log', 'thisismyurl-login-support' ); ?></div>
                                 <div class="timu-card-body">
-                                    <p>
-                                        <a href="<?php echo esc_url( $clear_logs_url ); ?>" class="button button-secondary" onclick="return confirm('<?php echo esc_js( __( 'Clear all security logs?', 'thisismyurl-login-support' ) ); ?>');"><?php esc_html_e( 'Clear Logs', 'thisismyurl-login-support' ); ?></a>
-                                    </p>
+                                    <form method="post" action="<?php echo esc_url( $clear_logs_action ); ?>">
+                                        <?php wp_nonce_field( 'timu_clear_logs' ); ?>
+                                        <input type="hidden" name="timu_clear_logs" value="1">
+                                        <button type="submit"
+                                            class="button button-secondary"
+                                            onclick="return confirm('<?php echo esc_js( __( 'Clear all security logs?', 'thisismyurl-login-support' ) ); ?>');">
+                                            <?php esc_html_e( 'Clear Logs', 'thisismyurl-login-support' ); ?>
+                                        </button>
+                                    </form>
                                     <table class="widefat striped">
                                         <caption class="screen-reader-text"><?php esc_html_e( 'Security Event Log', 'thisismyurl-login-support' ); ?></caption>
                                         <thead>
