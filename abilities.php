@@ -1,6 +1,6 @@
 <?php
 /**
- * WP 7 Abilities API registration for This Is My URL - Login Support.
+ * WP 7 Abilities API registration for Christopher Ross - Login Support.
  *
  * Exposes the current login-lockout state as a discoverable, REST/AI-invokable
  * ability. Read-only by design: it reports which usernames and IPs are currently

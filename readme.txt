@@ -1,4 +1,4 @@
-=== This Is My URL - Login Support ===
+=== - Login Support by Christopher Ross ===
 Contributors: thisismyurl
 Donate link: https://github.com/sponsors/thisismyurl
 Tags: login, security, wp-login, rate limit, site health, brute force, fail2ban

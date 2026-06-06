@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name: This Is My URL - Login Support
+ * Plugin Name: - Login Support by Christopher Ross
  * Plugin URI:  https://thisismyurl.com/
  * Description: Harden login access by allowing a custom login slug and admin security controls.
  * Version:     1.6149.0734
