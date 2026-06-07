@@ -19,7 +19,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TIMU_LOGIN_SUPPORT_VERSION', '1.6149.0734' );
+define( 'TIMU_LOGIN_SUPPORT_VERSION', '1.6158.1440' );
 
 require_once plugin_dir_path( __FILE__ ) . 'core/class-timu-core.php';
 
