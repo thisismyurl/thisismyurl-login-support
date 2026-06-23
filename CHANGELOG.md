@@ -5,6 +5,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses the `x.Yddd` versioning scheme defined in the project
 release rules (`x` = release class, `Y` = last digit of year, `ddd` = Julian day).
 
+## [0.6174.1642] — 2026-06-23
+
+### Added
+- New-IP email verification (lightweight 2FA for unfamiliar IPs). When a user logs in successfully from an IP address that has never appeared in the plugin audit log, the session is intercepted: a random 6-digit code is generated, stored as a transient (15-minute TTL) keyed by user ID, and emailed to the user's registered address. The user is redirected to `wp-login.php?action=timu_verify_ip`. Correct code submission completes authentication via `wp_set_auth_cookie()`; wrong codes show an inline error; expired transients redirect back to login.
+- `TIMU_LOGIN_SUPPORT_SKIP_IP_VERIFY` constant bypass — define as `true` in `wp-config.php` to skip IP verification (useful for staging/automation).
+- `timu_login_support_ip_verified` action hook fires after a new-IP verification succeeds (passes `$user_id`, `$user`).
+- `IP_VERIFY_TRANSIENT_PREFIX` class constant (`thisismyurl-login-support_ipv_`).
+
+### Changed
+- `__construct()`: added `wp_authenticate_user` filter at priority 100 and `login_form_timu_verify_ip` action for the new verification flow.
+
 ## [0.6126] — 2026-05-06
 
 ### Added

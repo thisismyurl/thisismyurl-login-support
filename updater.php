@@ -1,4 +1,6 @@
 <?php
+defined( 'ABSPATH' ) || exit;
+
 /**
  * GitHub Releases Updater — thisismyurl.com plugins.
  *

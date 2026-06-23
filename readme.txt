@@ -1,11 +1,11 @@
 === Login Support by thisismyurl.com ===
 Contributors: thisismyurl
 Donate link: https://thisismyurl.com/
-Tags: login, security, wp-login, rate limit, site health, brute force, fail2ban
-Requires at least: 6.0
+Tags: login, security, rate limit, brute force, fail2ban
+Requires at least: 6.4
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 0.6126
+Stable tag: 0.6174.1642
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -17,6 +17,7 @@ Login Support helps administrators reduce automated login probing by using a cus
 
 Features:
 
+* New-IP email verification — when a user logs in from an unfamiliar IP, a 6-digit code is emailed and must be entered before the session is granted.
 * Enable or disable Stealth Mode for login URL shifting.
 * Set and validate a custom secret login slug.
 * Generate one-time recovery links for safe access restoration.
@@ -114,7 +115,14 @@ I review PRs thoughtfully and appreciate well-tested contributions. Contributing
 
 == Changelog ==
 
-= 0.6126 =
+= 0.6174.1642 =
+* Added new-IP email verification — users logging in from an unfamiliar IP receive a 6-digit code by email and must enter it before the session is granted.
+* Added rate limiting on the verification form: after 5 wrong-code attempts the pending code is voided and the user must log in again (prevents OTP brute-force).
+* Changed OTP generation from wp_rand() to random_int() (CSPRNG) for cryptographically secure codes.
+* Removed GitHub-specific plugin headers (GitHub Plugin URI, Update URI) and updater.php bootstrap in preparation for WordPress.org hosting.
+* Fixed uninstall.php: lockout registry option (thisismyurl-login-support_lockouts) was not deleted on plugin removal.
+
+= 0.6126.0000 =
 * Added honeypot username trap (issue #37) — configurable list, extended IP ban, log event.
 * Added fail2ban-compatible file log sink (issue #34) — off by default, path-validated, `docs/fail2ban-filter.conf` included.
 * Added REST endpoint `GET /wp-json/timu-login-support/v1/lockouts` (issue #31) — read-only, `manage_options` auth.
@@ -123,7 +131,7 @@ I review PRs thoughtfully and appreciate well-tested contributions. Contributing
 * Added translations section to readme.txt and fr_CA translation (issue #1).
 * Added lockout registry so active lockouts are enumerable without transient key scanning.
 
-= 0.6123 =
+= 0.6123.0000 =
 * SECURITY: Fixed inverted rate-limiter (advisory GHSA-p369-rjwx-f44g) — a correct password could previously bypass an active lockout. Enforcement now hooks `wp_authenticate` priority 5 and halts BEFORE the password check runs. **All users on 0.6112 should update immediately.**
 * Added per-IP global lockout (defends against username-rotation / credential stuffing).
 * Hardened IP resolution — `X-Forwarded-For` and `CF-Connecting-IP` are no longer trusted unconditionally; opt in via `thisismyurl_login_support_trust_proxy_headers`.
@@ -138,7 +146,7 @@ I review PRs thoughtfully and appreciate well-tested contributions. Contributing
 * Added uninstall.php to clean every option, transient, and cron event on plugin removal.
 * Logging-toggle change is now itself logged out-of-band so the disable event is preserved.
 
-= 0.6112 =
+= 0.6112.0000 =
 * Added one-time recovery token mode with lifetime control.
 * Added configurable login rate limiting and lockout protection.
 * Added security event logging with retention controls and clear action.
@@ -169,11 +177,14 @@ Want to contribute a translation? Visit [translate.wordpress.org](https://transl
 
 == Upgrade Notice ==
 
-= 0.6126 =
+= 0.6174.1642 =
+Adds new-IP email verification with OTP rate limiting. Removes GitHub updater headers for WordPress.org hosting. Fixes uninstall cleanup gap for lockout registry.
+
+= 0.6126.0000 =
 Adds honeypot username trap, fail2ban file log integration, REST lockout endpoint, 24-hour sparkline, Two Factor compatibility panel, fr_CA translation, and lockout registry for ops dashboards.
 
-= 0.6123 =
+= 0.6123.0000 =
 Critical security fix for advisory GHSA-p369-rjwx-f44g (inverted rate limiter). Update immediately. Adds per-IP lockout, 2FA compatibility, WP-CLI escape hatch, and Application Password carve-out.
 
-= 0.6112 =
+= 0.6112.0000 =
 Includes recovery access, login rate limiting, event logging, and Site Health integration.

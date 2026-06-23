@@ -3,7 +3,7 @@
  * Plugin Name: Login Support by thisismyurl.com
  * Plugin URI:  https://thisismyurl.com/
  * Description: Harden login access by allowing a custom login slug and admin security controls.
- * Version:     0.6126
+ * Version:     0.6174.1642
  * Requires at least: 6.4
  * Requires PHP: 7.4
  * Author:      Christopher Ross
@@ -12,21 +12,41 @@
  * Domain Path: /languages
  * License:     GPL-2.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
- * GitHub Plugin URI: https://github.com/thisismyurl/thisismyurl-login-support
- * Primary Branch:    main
- * Update URI:        https://github.com/thisismyurl/thisismyurl-login-support
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TIMU_LOGIN_SUPPORT_VERSION', '0.6126' );
+define( 'TIMU_LOGIN_SUPPORT_VERSION', '0.6174.1642' );
 
 require_once plugin_dir_path( __FILE__ ) . 'core/class-timu-core.php';
 
 class TIMU_Login_Support extends TIMU_Core_v1 {
 
-    const LOG_OPTION       = 'thisismyurl-login-support_logs';
-    const LOCKOUT_REGISTRY = 'thisismyurl-login-support_lockouts';
+    const LOG_OPTION            = 'thisismyurl-login-support_logs';
+    const LOCKOUT_REGISTRY      = 'thisismyurl-login-support_lockouts';
+
+    /**
+     * Transient key prefix for IP-verification codes. Full key:
+     * {prefix}{user_id}  e.g. thisismyurl-login-support_ipv_42
+     *
+     * A single transient is written per pending-verification user. If the user
+     * triggers a second login attempt while one is pending the old code is
+     * overwritten — only the most-recently issued code is valid.
+     */
+    const IP_VERIFY_TRANSIENT_PREFIX  = 'thisismyurl-login-support_ipv_';
+
+    /**
+     * Transient key prefix for IP-verification attempt counters. Full key:
+     * {prefix}{user_id}  e.g. thisismyurl-login-support_ipv_attempts_42
+     *
+     * Counts wrong-code submissions during the active verification window. Once
+     * IP_VERIFY_MAX_ATTEMPTS is reached the code transient is deleted and the
+     * user must log in again to receive a fresh code.
+     */
+    const IP_VERIFY_ATTEMPTS_PREFIX   = 'thisismyurl-login-support_ipv_attempts_';
+
+    /** Maximum wrong-code attempts before the pending verification is voided. */
+    const IP_VERIFY_MAX_ATTEMPTS      = 5;
 
     public function __construct() {
         parent::__construct( 'thisismyurl-login-support', plugin_dir_url( __FILE__ ), 'timu_login_group' );
@@ -77,6 +97,27 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
         add_action( 'update_option_' . $this->plugin_slug . '_options', array( $this, 'handle_option_updates' ), 10, 2 );
         add_filter( 'site_status_tests', array( $this, 'register_site_health_tests' ) );
         add_action( 'rest_api_init', array( $this, 'register_rest_routes' ) );
+
+        /*
+         * New-IP email verification (lightweight 2FA for unfamiliar IPs).
+         * Hooked on `wp_authenticate_user` priority 100 — after WP has verified
+         * the password and returned a valid WP_User, but before wp_set_auth_cookie()
+         * is called. Returning a WP_Error from this filter aborts the cookie set.
+         *
+         * A constant bypass is available for automated tests / staging:
+         *   define( 'TIMU_LOGIN_SUPPORT_SKIP_IP_VERIFY', true );
+         *
+         * The feature is also skipped when a recognised 2FA plugin is active
+         * (those plugins manage their own second-factor step).
+         */
+        add_filter( 'wp_authenticate_user', array( $this, 'maybe_require_ip_verify' ), 100, 2 );
+
+        /*
+         * `login_form_{action}` is the WP hook that fires when wp-login.php is
+         * loaded with ?action=timu_verify_ip. We use it to render our form
+         * and (on POST) validate the code and complete authentication.
+         */
+        add_action( 'login_form_timu_verify_ip', array( $this, 'handle_ip_verify_page' ) );
     }
 
     public function load_textdomain() {
@@ -1478,6 +1519,357 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
         );
     }
 
+    // -------------------------------------------------------------------------
+    // New-IP email verification — methods
+    // -------------------------------------------------------------------------
+
+    /**
+     * Determine whether the current client IP has previously appeared in the
+     * plugin audit log. A "known" IP is one that has at least one log entry
+     * with any event type from this user.
+     *
+     * We scan LOG_OPTION rather than a dedicated store to avoid adding a new
+     * option. The log is capped at 500 entries and pruned to log_retention_days,
+     * so the scan is bounded.
+     *
+     * @param int    $user_id  The user whose log entries to search.
+     * @param string $ip       The IP address to test.
+     * @return bool  True if the IP has been seen before for this user.
+     */
+    private function ip_is_known_for_user( $user_id, $ip ) {
+        $logs     = get_option( self::LOG_OPTION, array() );
+        $logs     = is_array( $logs ) ? $logs : array();
+        $username = '';
+
+        $user_obj = get_userdata( (int) $user_id );
+
+        if ( $user_obj ) {
+            $username = $user_obj->user_login;
+        }
+
+        foreach ( $logs as $entry ) {
+            if ( empty( $entry['ip'] ) || empty( $entry['user'] ) ) {
+                continue;
+            }
+
+            if ( $entry['ip'] !== $ip ) {
+                continue;
+            }
+
+            // Match by username (the field stored in the log).
+            if ( '' !== $username && $entry['user'] === $username ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Generate, store, and email a 6-digit numeric verification code.
+     *
+     * The code is stored as a transient keyed by user ID with a 15-minute TTL.
+     * A second attempt while a code is pending overwrites the first, keeping
+     * only the latest code valid.
+     *
+     * @param int    $user_id   Destination user.
+     * @param string $user_email Destination address.
+     * @return bool  True if wp_mail() returned true, false otherwise.
+     */
+    private function send_ip_verify_code( $user_id, $user_email ) {
+        // 6-digit code padded to ensure leading zeros are preserved.
+        // random_int() uses the system CSPRNG (PHP 7.0+) — required for security codes.
+        $code = str_pad( (string) random_int( 0, 999999 ), 6, '0', STR_PAD_LEFT );
+
+        set_transient(
+            self::IP_VERIFY_TRANSIENT_PREFIX . (int) $user_id,
+            array(
+                'code' => $code,
+                'ip'   => $this->get_client_ip(),
+            ),
+            15 * MINUTE_IN_SECONDS
+        );
+
+        $site_name = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
+        $subject   = sprintf(
+            /* translators: %s = site name */
+            __( '[%s] New login location — verification required', 'thisismyurl-login-support' ),
+            $site_name
+        );
+
+        $message = sprintf(
+            /* translators: 1: site name, 2: IP address, 3: 6-digit code */
+            __(
+                "Someone signed in to %1\$s from a new IP address (%2\$s).\n\nYour verification code is:\n\n    %3\$s\n\nThis code expires in 15 minutes. If you did not initiate this login, contact your administrator immediately.",
+                'thisismyurl-login-support'
+            ),
+            $site_name,
+            $this->get_client_ip(),
+            $code
+        );
+
+        return wp_mail( $user_email, $subject, $message );
+    }
+
+    /**
+     * Hook: `wp_authenticate_user` priority 100.
+     *
+     * Intercepts a successful password check. If the client IP is new for this
+     * user, aborts the login with a WP_Error and redirects to the verification
+     * page. The redirect causes wp-login.php to fire `login_form_timu_verify_ip`
+     * on the next request.
+     *
+     * Bypasses:
+     *   - TIMU_LOGIN_SUPPORT_SKIP_IP_VERIFY constant.
+     *   - A recognised 2FA plugin is active.
+     *   - The user object passed is already a WP_Error (previous filter failed).
+     *   - Event logging is disabled (no log data to check against — fail open).
+     *
+     * @param WP_User|WP_Error $user     Result from previous authenticate filters.
+     * @param string           $password The submitted password (unused here).
+     * @return WP_User|WP_Error
+     */
+    public function maybe_require_ip_verify( $user, $password = '' ) {
+        // Pass through errors from earlier filters.
+        if ( is_wp_error( $user ) ) {
+            return $user;
+        }
+
+        // Constant bypass.
+        if ( defined( 'TIMU_LOGIN_SUPPORT_SKIP_IP_VERIFY' ) && TIMU_LOGIN_SUPPORT_SKIP_IP_VERIFY ) {
+            return $user;
+        }
+
+        // 2FA plugins handle their own second factor — don't stack on top.
+        if ( $this->should_skip_for_2fa() ) {
+            return $user;
+        }
+
+        $options = $this->get_controlled_options();
+
+        // If event logging is off, we have no IP history to check — fail open.
+        if ( empty( $options['enable_event_logging'] ) ) {
+            return $user;
+        }
+
+        $ip = $this->get_client_ip();
+
+        // '0.0.0.0' means we can't resolve the IP at all — fail open.
+        if ( '0.0.0.0' === $ip ) {
+            return $user;
+        }
+
+        if ( $this->ip_is_known_for_user( $user->ID, $ip ) ) {
+            return $user;
+        }
+
+        // New IP — send code and intercept.
+        $sent = $this->send_ip_verify_code( (int) $user->ID, $user->user_email );
+
+        $this->log_event(
+            'IP verification required',
+            sprintf(
+                'New IP %s for user_id=%d; code %s',
+                $ip,
+                (int) $user->ID,
+                $sent ? 'sent' : 'send-failed'
+            ),
+            $user->user_login
+        );
+
+        // Build the redirect URL. wp-login.php will render our custom action.
+        $verify_url = add_query_arg(
+            array(
+                'action' => 'timu_verify_ip',
+                'uid'    => (int) $user->ID,
+            ),
+            wp_login_url()
+        );
+
+        wp_safe_redirect( $verify_url );
+        exit;
+    }
+
+    /**
+     * Hook: `login_form_timu_verify_ip`.
+     *
+     * Fires when wp-login.php loads with ?action=timu_verify_ip. Handles both
+     * the GET (render form) and POST (validate code) requests.
+     *
+     * POST flow:
+     *   1. Verify nonce.
+     *   2. Load stored transient for the uid.
+     *   3. Compare submitted code via hash_equals().
+     *   4a. Match  → consume transient, call wp_set_auth_cookie(), redirect.
+     *   4b. No match → show error.
+     *   4c. Transient missing → code expired, redirect to login.
+     */
+    public function handle_ip_verify_page() {
+        $uid = isset( $_REQUEST['uid'] ) ? absint( $_REQUEST['uid'] ) : 0;
+
+        if ( ! $uid ) {
+            wp_safe_redirect( wp_login_url() );
+            exit;
+        }
+
+        $error_message = '';
+
+        if ( 'POST' === $_SERVER['REQUEST_METHOD'] ) {
+            // Nonce check.
+            $nonce = isset( $_POST['_wpnonce'] ) ? sanitize_key( wp_unslash( $_POST['_wpnonce'] ) ) : '';
+
+            if ( ! wp_verify_nonce( $nonce, 'timu_ip_verify_' . $uid ) ) {
+                $error_message = esc_html__( 'Security check failed. Please try again.', 'thisismyurl-login-support' );
+            } else {
+                $submitted_code = isset( $_POST['timu_verify_code'] )
+                    ? sanitize_text_field( wp_unslash( $_POST['timu_verify_code'] ) )
+                    : '';
+
+                // Strip non-digits so users can type "123 456" or "123-456".
+                $submitted_code = preg_replace( '/\D/', '', $submitted_code );
+
+                $stored = get_transient( self::IP_VERIFY_TRANSIENT_PREFIX . $uid );
+
+                if ( ! is_array( $stored ) || empty( $stored['code'] ) ) {
+                    // Transient expired or was consumed.
+                    $this->log_event(
+                        'IP verification expired',
+                        sprintf( 'user_id=%d code transient gone', $uid ),
+                        ''
+                    );
+                    wp_safe_redirect( wp_login_url() );
+                    exit;
+                }
+
+                // Rate-limit wrong-code attempts.
+                $attempts_key = self::IP_VERIFY_ATTEMPTS_PREFIX . $uid;
+                $attempts     = (int) get_transient( $attempts_key );
+
+                if ( $attempts >= self::IP_VERIFY_MAX_ATTEMPTS ) {
+                    // Already over limit — void the pending verification and force a fresh login.
+                    delete_transient( self::IP_VERIFY_TRANSIENT_PREFIX . $uid );
+                    delete_transient( $attempts_key );
+                    $this->log_event(
+                        'IP verification voided',
+                        sprintf( 'user_id=%d exceeded %d wrong-code attempts; verification voided', $uid, self::IP_VERIFY_MAX_ATTEMPTS ),
+                        ''
+                    );
+                    wp_safe_redirect( wp_login_url() );
+                    exit;
+                }
+
+                if ( hash_equals( $stored['code'], $submitted_code ) ) {
+                    // Code correct — complete authentication.
+                    delete_transient( self::IP_VERIFY_TRANSIENT_PREFIX . $uid );
+                    delete_transient( $attempts_key );
+
+                    $user = get_userdata( $uid );
+
+                    if ( ! $user ) {
+                        wp_safe_redirect( wp_login_url() );
+                        exit;
+                    }
+
+                    $this->log_event(
+                        'IP verification passed',
+                        sprintf( 'user_id=%d new IP verified', $uid ),
+                        $user->user_login
+                    );
+
+                    $remember = false; // conservative: never "remember me" via this path.
+
+                    wp_set_auth_cookie( $uid, $remember );
+                    wp_set_current_user( $uid );
+
+                    /**
+                     * Fires after a new-IP verification is successfully completed.
+                     *
+                     * @param int     $uid  The user ID that was verified.
+                     * @param WP_User $user The user object.
+                     */
+                    do_action( 'timu_login_support_ip_verified', $uid, $user );
+
+                    $redirect_to = isset( $_POST['redirect_to'] )
+                        ? sanitize_url( wp_unslash( $_POST['redirect_to'] ) )
+                        : admin_url();
+
+                    wp_safe_redirect( $redirect_to );
+                    exit;
+                }
+
+                // Wrong code — increment attempt counter, then check limit.
+                $new_attempts = $attempts + 1;
+                set_transient( $attempts_key, $new_attempts, 15 * MINUTE_IN_SECONDS );
+
+                $this->log_event(
+                    'IP verification failed',
+                    sprintf( 'user_id=%d wrong code submitted (attempt %d of %d)', $uid, $new_attempts, self::IP_VERIFY_MAX_ATTEMPTS ),
+                    ''
+                );
+
+                if ( $new_attempts >= self::IP_VERIFY_MAX_ATTEMPTS ) {
+                    // Limit reached on this attempt — void now and force a fresh login.
+                    delete_transient( self::IP_VERIFY_TRANSIENT_PREFIX . $uid );
+                    delete_transient( $attempts_key );
+                    $this->log_event(
+                        'IP verification voided',
+                        sprintf( 'user_id=%d exceeded %d wrong-code attempts; verification voided', $uid, self::IP_VERIFY_MAX_ATTEMPTS ),
+                        ''
+                    );
+                    wp_safe_redirect( wp_login_url() );
+                    exit;
+                }
+
+                $error_message = esc_html__( 'Incorrect code. Please try again.', 'thisismyurl-login-support' );
+            }
+        }
+
+        // Render the verification form — output starts here.
+        // wp-login.php buffers its own <html> wrapper only when we call
+        // login_header()/login_footer(). We use those so the page inherits
+        // the standard wp-login styles.
+        $redirect_to = isset( $_GET['redirect_to'] )
+            ? sanitize_url( wp_unslash( $_GET['redirect_to'] ) )
+            : admin_url();
+
+        login_header(
+            esc_html__( 'Verify Your Login', 'thisismyurl-login-support' ),
+            '<p class="message">' . esc_html__( 'A verification code was sent to your email address. Enter it below to complete sign-in.', 'thisismyurl-login-support' ) . '</p>'
+        );
+
+        if ( $error_message ) {
+            echo '<div id="login_error">' . $error_message . '</div>'; // $error_message is already escaped above.
+        }
+        ?>
+        <form name="timu_ip_verify_form" id="loginform" action="<?php echo esc_url( add_query_arg( array( 'action' => 'timu_verify_ip', 'uid' => $uid ), wp_login_url() ) ); ?>" method="post">
+            <p>
+                <label for="timu_verify_code"><?php esc_html_e( 'Verification Code', 'thisismyurl-login-support' ); ?></label>
+                <input type="text"
+                    name="timu_verify_code"
+                    id="timu_verify_code"
+                    class="input"
+                    inputmode="numeric"
+                    pattern="[0-9 \-]{6,7}"
+                    autocomplete="one-time-code"
+                    maxlength="7"
+                    required
+                    value=""
+                    size="20"
+                    aria-describedby="timu-verify-hint" />
+                <span id="timu-verify-hint" class="description"><?php esc_html_e( 'Enter the 6-digit code from the email.', 'thisismyurl-login-support' ); ?></span>
+            </p>
+            <?php wp_nonce_field( 'timu_ip_verify_' . $uid ); ?>
+            <input type="hidden" name="uid" value="<?php echo absint( $uid ); ?>" />
+            <input type="hidden" name="redirect_to" value="<?php echo esc_attr( $redirect_to ); ?>" />
+            <p class="submit">
+                <input type="submit" name="wp-submit" id="wp-submit" class="button button-primary button-large" value="<?php esc_attr_e( 'Verify', 'thisismyurl-login-support' ); ?>" />
+            </p>
+        </form>
+        <?php
+        login_footer();
+        exit;
+    }
+
     public function rewrite_login_urls( $url, $path, $scheme, $blog_id ) {
         if ( ! $this->is_shifting_enabled() ) {
             return $url;
@@ -1492,26 +1884,6 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
 }
 
 new TIMU_Login_Support();
-
-/**
- * GitHub Updater Integration.
- * Loads the updater logic once all plugins have been loaded by WordPress.
- */
-add_action( 'plugins_loaded', function() {
-    $updater_path = plugin_dir_path( __FILE__ ) . 'updater.php';
-    if ( file_exists( $updater_path ) ) {
-        require_once $updater_path;
-        if ( class_exists( 'TIMU_GitHub_Updater' ) ) {
-            new TIMU_GitHub_Updater( array(
-                'slug'               => 'thisismyurl-login-support',
-                'proper_folder_name' => 'thisismyurl-login-support',
-                'api_url'            => 'https://api.github.com/repos/thisismyurl/thisismyurl-login-support/releases/latest',
-                'github_url'         => 'https://github.com/thisismyurl/thisismyurl-login-support',
-                'plugin_file'        => __FILE__,
-            ) );
-        }
-    }
-} );
 
 /**
  * WP-CLI escape hatch.
