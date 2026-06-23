@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name: Login Support by thisismyurl.com
+ * Plugin Name: Login Support by Christopher Ross
  * Plugin URI:  https://thisismyurl.com/
  * Description: Harden login access by allowing a custom login slug and admin security controls.
- * Version:     0.6174.1642
+ * Version:     1.6174.1642
  * Requires at least: 6.4
  * Requires PHP: 7.4
  * Author:      Christopher Ross
@@ -16,7 +16,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TIMU_LOGIN_SUPPORT_VERSION', '0.6174.1642' );
+define( 'TIMU_LOGIN_SUPPORT_VERSION', '1.6174.1642' );
 
 require_once plugin_dir_path( __FILE__ ) . 'core/class-timu-core.php';
 
@@ -53,6 +53,7 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
 
         add_action( 'plugins_loaded', array( $this, 'load_textdomain' ) );
         add_action( 'admin_init', array( $this, 'handle_force_logout' ) );
+        add_action( 'admin_init', array( $this, 'handle_clear_logs' ) );
         add_action( 'admin_init', array( $this, 'handle_admin_actions' ) );
         add_action( 'admin_menu', array( $this, 'add_menu' ) );
         /*
@@ -118,6 +119,19 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
          * and (on POST) validate the code and complete authentication.
          */
         add_action( 'login_form_timu_verify_ip', array( $this, 'handle_ip_verify_page' ) );
+
+        add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), array( $this, 'add_action_links' ) );
+    }
+
+    /**
+     * Append a Sponsor link to the plugin row actions.
+     *
+     * @param string[] $links Existing action links.
+     * @return string[]
+     */
+    public function add_action_links( $links ) {
+        $links[] = '<a href="' . esc_url( 'https://github.com/sponsors/thisismyurl' ) . '" target="_blank" rel="noopener noreferrer">' . esc_html__( 'Sponsor', 'thisismyurl-login-support' ) . '</a>';
+        return $links;
     }
 
     public function load_textdomain() {
@@ -720,12 +734,46 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
             );
         }
 
-        if ( 'clear_logs' === $action ) {
-            update_option( self::LOG_OPTION, array(), false );
-            $this->log_event( 'Security logs cleared', 'Admin cleared all security logs' );
+        wp_safe_redirect( admin_url( 'options-general.php?page=' . $this->plugin_slug ) );
+        exit;
+    }
+
+    /**
+     * Clear the security event log.
+     *
+     * Destructive action: accepts POST only. The settings UI submits this via a
+     * real <button> in a POST form (a11y finding P1 / 4.1.2), mirroring the
+     * Force Global Logout control. The previous GET-link path let any
+     * link-prefetcher or CSRF chain trip the wipe.
+     *
+     * @return void
+     */
+    public function handle_clear_logs() {
+        if ( ! is_admin() || ! current_user_can( 'manage_options' ) ) {
+            return;
         }
 
-        wp_safe_redirect( admin_url( 'options-general.php?page=' . $this->plugin_slug ) );
+        $clear_logs = isset( $_POST['timu_clear_logs'] ) ? absint( wp_unslash( $_POST['timu_clear_logs'] ) ) : 0;
+        $page       = isset( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
+        $nonce      = isset( $_POST['_wpnonce'] ) ? sanitize_text_field( wp_unslash( $_POST['_wpnonce'] ) ) : '';
+
+        if ( 1 !== $clear_logs || $this->plugin_slug !== $page ) {
+            return;
+        }
+
+        if ( ! wp_verify_nonce( $nonce, 'timu_clear_logs' ) ) {
+            wp_die( esc_html__( 'Security check failed.', 'thisismyurl-login-support' ) );
+        }
+
+        update_option( self::LOG_OPTION, array(), false );
+        $this->log_event( 'Security logs cleared', 'Admin cleared all security logs' );
+
+        wp_safe_redirect(
+            remove_query_arg(
+                array( 'timu_clear_logs', '_wpnonce' ),
+                admin_url( 'options-general.php?page=' . $this->plugin_slug )
+            )
+        );
         exit;
     }
 
@@ -734,9 +782,11 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
             return;
         }
 
-        $force_logout = isset( $_GET['timu_force_logout'] ) ? absint( wp_unslash( $_GET['timu_force_logout'] ) ) : 0;
+        // Destructive action: accept POST only. The settings UI submits this
+        // via a real <button> in a POST form (a11y finding P1 / 4.1.2).
+        $force_logout = isset( $_POST['timu_force_logout'] ) ? absint( wp_unslash( $_POST['timu_force_logout'] ) ) : 0;
         $page         = isset( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
-        $nonce        = isset( $_GET['_wpnonce'] ) ? sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ) : '';
+        $nonce        = isset( $_POST['_wpnonce'] ) ? sanitize_text_field( wp_unslash( $_POST['_wpnonce'] ) ) : '';
 
         if ( 1 !== $force_logout || $this->plugin_slug !== $page ) {
             return;
@@ -782,14 +832,8 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
             admin_url( 'options-general.php?page=' . $this->plugin_slug . '&timu_action=generate_recovery' ),
             'timu_admin_actions'
         );
-        $clear_logs_url      = wp_nonce_url(
-            admin_url( 'options-general.php?page=' . $this->plugin_slug . '&timu_action=clear_logs' ),
-            'timu_admin_actions'
-        );
-        $force_logout_url    = wp_nonce_url(
-            admin_url( 'options-general.php?page=' . $this->plugin_slug . '&timu_force_logout=1' ),
-            'timu_force_logout'
-        );
+        $force_logout_action = admin_url( 'options-general.php?page=' . $this->plugin_slug );
+        $clear_logs_action   = $force_logout_action;
         $logs                = get_option( self::LOG_OPTION, array() );
 
         $logs = is_array( $logs ) ? array_reverse( $logs ) : array();
@@ -812,11 +856,15 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
         ?>
         <hr>
         <p><strong><?php esc_html_e( 'Security Utilities:', 'thisismyurl-login-support' ); ?></strong></p>
-        <a href="<?php echo esc_url( $force_logout_url ); ?>"
-            class="button button-link-delete"
-            onclick="return confirm('<?php echo esc_js( __( 'Immediately log out all other users?', 'thisismyurl-login-support' ) ); ?>');">
-            <?php esc_html_e( 'Force Global Logout', 'thisismyurl-login-support' ); ?>
-        </a>
+        <form method="post" action="<?php echo esc_url( $force_logout_action ); ?>">
+            <?php wp_nonce_field( 'timu_force_logout' ); ?>
+            <input type="hidden" name="timu_force_logout" value="1">
+            <button type="submit"
+                class="button button-link-delete"
+                onclick="return confirm('<?php echo esc_js( __( 'Immediately log out all other users?', 'thisismyurl-login-support' ) ); ?>');">
+                <?php esc_html_e( 'Force Global Logout', 'thisismyurl-login-support' ); ?>
+            </button>
+        </form>
         <p>
             <a href="<?php echo esc_url( $recovery_action_url ); ?>" class="button">
                 <?php esc_html_e( 'Generate One-Time Recovery Link', 'thisismyurl-login-support' ); ?>
@@ -845,15 +893,15 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
                                 <div class="timu-card-body">
                                     <table class="form-table" role="presentation">
                                         <tr>
-                                            <th scope="row"><?php esc_html_e( 'Activate Stealth Mode', 'thisismyurl-login-support' ); ?></th>
+                                            <th scope="row" id="timu-label-shifting"><?php esc_html_e( 'Activate Stealth Mode', 'thisismyurl-login-support' ); ?></th>
                                             <td>
                                                 <label class="timu-switch">
-                                                    <input type="checkbox" class="timu-toggle-trigger" data-target=".timu-conditional-shifting" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[enable_shifting]" value="1" <?php checked( 1, (int) $options['enable_shifting'] ); ?>>
+                                                    <input type="checkbox" class="timu-toggle-trigger" data-target=".timu-conditional-shifting" aria-labelledby="timu-label-shifting" aria-expanded="<?php echo $options['enable_shifting'] ? 'true' : 'false'; ?>" aria-controls="timu-row-shifting" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[enable_shifting]" value="1" <?php checked( 1, (int) $options['enable_shifting'] ); ?>>
                                                     <span class="timu-slider"></span>
                                                 </label>
                                             </td>
                                         </tr>
-                                        <tr class="timu-conditional-shifting">
+                                        <tr class="timu-conditional-shifting" id="timu-row-shifting">
                                             <th scope="row"><?php esc_html_e( 'Secret Slug', 'thisismyurl-login-support' ); ?></th>
                                             <td>
                                                 <input type="text" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[slug]" value="<?php echo esc_attr( $options['slug'] ); ?>" class="regular-text" />
@@ -861,50 +909,50 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
                                             </td>
                                         </tr>
                                         <tr>
-                                            <th scope="row"><?php esc_html_e( 'Enable Recovery Mode', 'thisismyurl-login-support' ); ?></th>
+                                            <th scope="row" id="timu-label-recovery"><?php esc_html_e( 'Enable Recovery Mode', 'thisismyurl-login-support' ); ?></th>
                                             <td>
                                                 <label class="timu-switch">
-                                                    <input type="checkbox" class="timu-toggle-trigger" data-target=".timu-conditional-recovery" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[enable_recovery_mode]" value="1" <?php checked( 1, (int) $options['enable_recovery_mode'] ); ?>>
+                                                    <input type="checkbox" class="timu-toggle-trigger" data-target=".timu-conditional-recovery" aria-labelledby="timu-label-recovery" aria-expanded="<?php echo $options['enable_recovery_mode'] ? 'true' : 'false'; ?>" aria-controls="timu-row-recovery" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[enable_recovery_mode]" value="1" <?php checked( 1, (int) $options['enable_recovery_mode'] ); ?>>
                                                     <span class="timu-slider"></span>
                                                 </label>
                                                 <p class="description"><?php esc_html_e( 'Allow temporary one-time token access to recover login URL access.', 'thisismyurl-login-support' ); ?></p>
                                             </td>
                                         </tr>
-                                        <tr class="timu-conditional-recovery">
+                                        <tr class="timu-conditional-recovery" id="timu-row-recovery">
                                             <th scope="row"><?php esc_html_e( 'Recovery Token Lifetime (minutes)', 'thisismyurl-login-support' ); ?></th>
                                             <td><input type="number" min="5" max="180" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[recovery_token_ttl]" value="<?php echo esc_attr( (string) $options['recovery_token_ttl'] ); ?>" class="small-text" /></td>
                                         </tr>
                                         <tr>
-                                            <th scope="row"><?php esc_html_e( 'Enable Login Rate Limiting', 'thisismyurl-login-support' ); ?></th>
+                                            <th scope="row" id="timu-label-rate-limit"><?php esc_html_e( 'Enable Login Rate Limiting', 'thisismyurl-login-support' ); ?></th>
                                             <td>
                                                 <label class="timu-switch">
-                                                    <input type="checkbox" class="timu-toggle-trigger" data-target=".timu-conditional-rate-limit" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[enable_rate_limit]" value="1" <?php checked( 1, (int) $options['enable_rate_limit'] ); ?>>
+                                                    <input type="checkbox" class="timu-toggle-trigger" data-target=".timu-conditional-rate-limit" aria-labelledby="timu-label-rate-limit" aria-expanded="<?php echo $options['enable_rate_limit'] ? 'true' : 'false'; ?>" aria-controls="timu-row-rate-limit-attempts timu-row-rate-limit-window timu-row-rate-limit-lockout" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[enable_rate_limit]" value="1" <?php checked( 1, (int) $options['enable_rate_limit'] ); ?>>
                                                     <span class="timu-slider"></span>
                                                 </label>
                                             </td>
                                         </tr>
-                                        <tr class="timu-conditional-rate-limit">
+                                        <tr class="timu-conditional-rate-limit" id="timu-row-rate-limit-attempts">
                                             <th scope="row"><?php esc_html_e( 'Max Failed Attempts', 'thisismyurl-login-support' ); ?></th>
                                             <td><input type="number" min="1" max="20" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[rate_limit_attempts]" value="<?php echo esc_attr( (string) $options['rate_limit_attempts'] ); ?>" class="small-text" /></td>
                                         </tr>
-                                        <tr class="timu-conditional-rate-limit">
+                                        <tr class="timu-conditional-rate-limit" id="timu-row-rate-limit-window">
                                             <th scope="row"><?php esc_html_e( 'Attempt Window (minutes)', 'thisismyurl-login-support' ); ?></th>
                                             <td><input type="number" min="1" max="120" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[rate_limit_window]" value="<?php echo esc_attr( (string) $options['rate_limit_window'] ); ?>" class="small-text" /></td>
                                         </tr>
-                                        <tr class="timu-conditional-rate-limit">
+                                        <tr class="timu-conditional-rate-limit" id="timu-row-rate-limit-lockout">
                                             <th scope="row"><?php esc_html_e( 'Lockout Duration (minutes)', 'thisismyurl-login-support' ); ?></th>
                                             <td><input type="number" min="1" max="1440" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[lockout_minutes]" value="<?php echo esc_attr( (string) $options['lockout_minutes'] ); ?>" class="small-text" /></td>
                                         </tr>
                                         <tr>
-                                            <th scope="row"><?php esc_html_e( 'Enable Security Event Logging', 'thisismyurl-login-support' ); ?></th>
+                                            <th scope="row" id="timu-label-logging"><?php esc_html_e( 'Enable Security Event Logging', 'thisismyurl-login-support' ); ?></th>
                                             <td>
                                                 <label class="timu-switch">
-                                                    <input type="checkbox" class="timu-toggle-trigger" data-target=".timu-conditional-logging" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[enable_event_logging]" value="1" <?php checked( 1, (int) $options['enable_event_logging'] ); ?>>
+                                                    <input type="checkbox" class="timu-toggle-trigger" data-target=".timu-conditional-logging" aria-labelledby="timu-label-logging" aria-expanded="<?php echo $options['enable_event_logging'] ? 'true' : 'false'; ?>" aria-controls="timu-row-logging" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[enable_event_logging]" value="1" <?php checked( 1, (int) $options['enable_event_logging'] ); ?>>
                                                     <span class="timu-slider"></span>
                                                 </label>
                                             </td>
                                         </tr>
-                                        <tr class="timu-conditional-logging">
+                                        <tr class="timu-conditional-logging" id="timu-row-logging">
                                             <th scope="row"><?php esc_html_e( 'Log Retention (days)', 'thisismyurl-login-support' ); ?></th>
                                             <td><input type="number" min="1" max="365" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[log_retention_days]" value="<?php echo esc_attr( (string) $options['log_retention_days'] ); ?>" class="small-text" /></td>
                                         </tr>
@@ -920,16 +968,16 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
                                             <td><input type="number" min="1" max="1440" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[honeypot_ban_minutes]" value="<?php echo esc_attr( (string) $options['honeypot_ban_minutes'] ); ?>" class="small-text" /></td>
                                         </tr>
                                         <tr>
-                                            <th scope="row"><?php esc_html_e( 'Enable fail2ban File Log', 'thisismyurl-login-support' ); ?></th>
+                                            <th scope="row" id="timu-label-filelog"><?php esc_html_e( 'Enable fail2ban File Log', 'thisismyurl-login-support' ); ?></th>
                                             <td>
                                                 <label class="timu-switch">
-                                                    <input type="checkbox" class="timu-toggle-trigger" data-target=".timu-conditional-filelog" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[enable_file_log]" value="1" <?php checked( 1, (int) $options['enable_file_log'] ); ?>>
+                                                    <input type="checkbox" class="timu-toggle-trigger" data-target=".timu-conditional-filelog" aria-labelledby="timu-label-filelog" aria-expanded="<?php echo $options['enable_file_log'] ? 'true' : 'false'; ?>" aria-controls="timu-row-filelog" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[enable_file_log]" value="1" <?php checked( 1, (int) $options['enable_file_log'] ); ?>>
                                                     <span class="timu-slider"></span>
                                                 </label>
                                                 <p class="description"><?php esc_html_e( 'Write one line per failed login to a file for fail2ban integration.', 'thisismyurl-login-support' ); ?></p>
                                             </td>
                                         </tr>
-                                        <tr class="timu-conditional-filelog">
+                                        <tr class="timu-conditional-filelog" id="timu-row-filelog">
                                             <th scope="row"><?php esc_html_e( 'Log File Path', 'thisismyurl-login-support' ); ?></th>
                                             <td>
                                                 <input type="text" name="<?php echo esc_attr( $this->plugin_slug ); ?>_options[file_log_path]" value="<?php echo esc_attr( $options['file_log_path'] ); ?>" class="regular-text" placeholder="/var/log/wp-login-support.log" />
@@ -943,17 +991,24 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
                             <div class="timu-card">
                                 <div class="timu-card-header"><?php esc_html_e( 'Security Event Log', 'thisismyurl-login-support' ); ?></div>
                                 <div class="timu-card-body">
-                                    <p>
-                                        <a href="<?php echo esc_url( $clear_logs_url ); ?>" class="button button-secondary" onclick="return confirm('<?php echo esc_js( __( 'Clear all security logs?', 'thisismyurl-login-support' ) ); ?>');"><?php esc_html_e( 'Clear Logs', 'thisismyurl-login-support' ); ?></a>
-                                    </p>
+                                    <form method="post" action="<?php echo esc_url( $clear_logs_action ); ?>">
+                                        <?php wp_nonce_field( 'timu_clear_logs' ); ?>
+                                        <input type="hidden" name="timu_clear_logs" value="1">
+                                        <button type="submit"
+                                            class="button button-secondary"
+                                            onclick="return confirm('<?php echo esc_js( __( 'Clear all security logs?', 'thisismyurl-login-support' ) ); ?>');">
+                                            <?php esc_html_e( 'Clear Logs', 'thisismyurl-login-support' ); ?>
+                                        </button>
+                                    </form>
                                     <table class="widefat striped">
+                                        <caption class="screen-reader-text"><?php esc_html_e( 'Security Event Log', 'thisismyurl-login-support' ); ?></caption>
                                         <thead>
                                             <tr>
-                                                <th><?php esc_html_e( 'Date', 'thisismyurl-login-support' ); ?></th>
-                                                <th><?php esc_html_e( 'Event', 'thisismyurl-login-support' ); ?></th>
-                                                <th><?php esc_html_e( 'User', 'thisismyurl-login-support' ); ?></th>
-                                                <th><?php esc_html_e( 'IP', 'thisismyurl-login-support' ); ?></th>
-                                                <th><?php esc_html_e( 'Details', 'thisismyurl-login-support' ); ?></th>
+                                                <th scope="col"><?php esc_html_e( 'Date', 'thisismyurl-login-support' ); ?></th>
+                                                <th scope="col"><?php esc_html_e( 'Event', 'thisismyurl-login-support' ); ?></th>
+                                                <th scope="col"><?php esc_html_e( 'User', 'thisismyurl-login-support' ); ?></th>
+                                                <th scope="col"><?php esc_html_e( 'IP', 'thisismyurl-login-support' ); ?></th>
+                                                <th scope="col"><?php esc_html_e( 'Details', 'thisismyurl-login-support' ); ?></th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -998,6 +1053,7 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
                                     <canvas id="timu-sparkline" width="600" height="80"
                                         role="img"
                                         aria-label="<?php echo esc_attr( sprintf( /* translators: %d = number of failed login attempts */ __( '%d failed login attempts in the last 24 hours', 'thisismyurl-login-support' ), $sparkline_total ) ); ?>"
+                                        aria-describedby="timu-sparkline-detail"
                                         style="max-width:100%;border:1px solid #dcdcde;border-radius:3px;">
                                         <p><?php echo esc_html( sprintf( /* translators: %d = total failed attempts */ __( '%d failed login attempts in the last 24 hours.', 'thisismyurl-login-support' ), $sparkline_total ) ); ?></p>
                                     </canvas>
@@ -1022,7 +1078,7 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
                                         }
                                     })();
                                     </script>
-                                    <details style="margin-top:8px;">
+                                    <details id="timu-sparkline-detail" style="margin-top:8px;">
                                         <summary><?php esc_html_e( 'Hourly breakdown', 'thisismyurl-login-support' ); ?></summary>
                                         <table class="widefat striped" style="margin-top:6px;">
                                             <thead><tr><th><?php esc_html_e( 'Hour (oldest → newest)', 'thisismyurl-login-support' ); ?></th><th><?php esc_html_e( 'Failed attempts', 'thisismyurl-login-support' ); ?></th></tr></thead>
@@ -1252,6 +1308,22 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
     }
 
     public function rest_get_lockouts() {
+        return rest_ensure_response( self::get_active_lockouts() );
+    }
+
+    /**
+     * Read the lockout registry and return only the currently-active lockouts.
+     *
+     * Single source of truth for "what is locked out right now" — shared by the
+     * REST endpoint and the WP 7 Abilities API registration. Expired rows are
+     * skipped (the registry is pruned lazily on write, so this read-side filter
+     * is what guarantees freshness).
+     *
+     * @since 1.6147
+     *
+     * @return array<int, array{type:string, identifier:string, locked_until:int, ttl_seconds:int}>
+     */
+    public static function get_active_lockouts() {
         $registry = get_option( self::LOCKOUT_REGISTRY, array() );
         $registry = is_array( $registry ) ? $registry : array();
         $now      = time();
@@ -1270,7 +1342,7 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
             );
         }
 
-        return rest_ensure_response( $active );
+        return $active;
     }
 
     public function rest_lockouts_schema() {
@@ -1884,6 +1956,11 @@ class TIMU_Login_Support extends TIMU_Core_v1 {
 }
 
 new TIMU_Login_Support();
+
+// WP 7 Abilities API: expose read-only login-lockout status. The callback
+// inside fires on `wp_abilities_api_init` (WordPress 6.9+), long after the
+// class above is defined, so this require order is safe.
+require_once plugin_dir_path( __FILE__ ) . 'abilities.php';
 
 /**
  * WP-CLI escape hatch.

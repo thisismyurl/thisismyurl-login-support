@@ -5,16 +5,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses the `x.Yddd` versioning scheme defined in the project
 release rules (`x` = release class, `Y` = last digit of year, `ddd` = Julian day).
 
-## [0.6174.1642] — 2026-06-23
+## [1.6174.1642] — 2026-06-23
 
 ### Added
 - New-IP email verification (lightweight 2FA for unfamiliar IPs). When a user logs in successfully from an IP address that has never appeared in the plugin audit log, the session is intercepted: a random 6-digit code is generated, stored as a transient (15-minute TTL) keyed by user ID, and emailed to the user's registered address. The user is redirected to `wp-login.php?action=timu_verify_ip`. Correct code submission completes authentication via `wp_set_auth_cookie()`; wrong codes show an inline error; expired transients redirect back to login.
 - `TIMU_LOGIN_SUPPORT_SKIP_IP_VERIFY` constant bypass — define as `true` in `wp-config.php` to skip IP verification (useful for staging/automation).
 - `timu_login_support_ip_verified` action hook fires after a new-IP verification succeeds (passes `$user_id`, `$user`).
-- `IP_VERIFY_TRANSIENT_PREFIX` class constant (`thisismyurl-login-support_ipv_`).
+- `IP_VERIFY_TRANSIENT_PREFIX` and `IP_VERIFY_ATTEMPTS_PREFIX` class constants.
+- Rate limiting on the verification form (max 5 wrong-code attempts before the pending code is voided and the user must re-login).
+- `add_action_links()` filter appends a Sponsor link to the plugin row in WP admin.
 
 ### Changed
 - `__construct()`: added `wp_authenticate_user` filter at priority 100 and `login_form_timu_verify_ip` action for the new verification flow.
+- OTP generation switched from `wp_rand()` to `random_int()` (CSPRNG — required for security-sensitive codes).
+- Removed GitHub-specific plugin headers (GitHub Plugin URI, Update URI) and updater bootstrap in preparation for WordPress.org hosting.
+- Raised Requires at least from 6.0 to 6.4 (sanitize_url() requires 6.1; aligns with plugin header).
+- Version bumped to `1.6174.1642` on the unified `x.Yddd.hhmm` calendar scheme.
+
+## [1.6143] — 2026-05-23
+
+### Changed
+- Promoted to a full release (class 1). The `0.6xxx` line was pre-release on the `x.Yddd` scheme.
+- Standardized the donation link to GitHub Sponsors (`https://github.com/sponsors/thisismyurl`).
 
 ## [0.6126] — 2026-05-06
 

@@ -1,4 +1,4 @@
-# Contributing to This Is My URL Plugins
+# Contributing to Christopher Ross Plugins
 
 If you've used one of these plugins and want to help make it better, this is the place to start. Code, bug reports, edge-case testing — all useful.
 
