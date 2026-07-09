@@ -1,5 +1,8 @@
-=== - Login Support by Christopher Ross ===
+=== Login Support by Christopher Ross ===
 Contributors: thisismyurl
+Plugin URI: https://thisismyurl.com/thisismyurl-login-support/
+Author: Christopher Ross
+Author URI: https://thisismyurl.com/
 Donate link: https://github.com/sponsors/thisismyurl
 Tags: login, security, rate limit, brute force, fail2ban
 Requires at least: 6.4
